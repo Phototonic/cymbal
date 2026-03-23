@@ -38,6 +38,7 @@ you already have installed and authenticated.`,
 		force, _ := cmd.Flags().GetBool("force")
 		summarize, _ := cmd.Flags().GetBool("summarize")
 		backend, _ := cmd.Flags().GetString("backend")
+		model, _ := cmd.Flags().GetString("model")
 
 		dbPath := getDBPath(cmd)
 
@@ -49,6 +50,7 @@ you already have installed and authenticated.`,
 			Force:     force,
 			Summarize: summarize,
 			Backend:   backend,
+			Model:     model,
 		})
 		if err != nil {
 			return fmt.Errorf("indexing failed: %w", err)
@@ -71,5 +73,6 @@ func init() {
 	indexCmd.Flags().BoolP("force", "f", false, "force re-index all files")
 	indexCmd.Flags().Bool("summarize", false, "generate AI summaries using your installed agent CLI")
 	indexCmd.Flags().String("backend", "", "agent backend for summaries (default: auto-detect)")
+	indexCmd.Flags().StringP("model", "m", "", "model for summaries (e.g. anthropic/claude-sonnet-4-6)")
 	rootCmd.AddCommand(indexCmd)
 }

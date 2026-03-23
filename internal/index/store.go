@@ -34,19 +34,20 @@ CREATE TABLE IF NOT EXISTS files (
 );
 
 CREATE TABLE IF NOT EXISTS symbols (
-	id         INTEGER PRIMARY KEY AUTOINCREMENT,
-	file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-	name       TEXT NOT NULL,
-	kind       TEXT NOT NULL,
-	start_line INTEGER NOT NULL,
-	end_line   INTEGER NOT NULL,
-	start_col  INTEGER,
-	end_col    INTEGER,
-	parent     TEXT,
-	depth      INTEGER DEFAULT 0,
-	signature  TEXT,
-	summary    TEXT,
-	language   TEXT NOT NULL
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	file_id     INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+	name        TEXT NOT NULL,
+	kind        TEXT NOT NULL,
+	start_line  INTEGER NOT NULL,
+	end_line    INTEGER NOT NULL,
+	start_col   INTEGER,
+	end_col     INTEGER,
+	parent      TEXT,
+	depth       INTEGER DEFAULT 0,
+	signature   TEXT,
+	summary     TEXT,
+	source_hash TEXT,
+	language    TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS imports (
