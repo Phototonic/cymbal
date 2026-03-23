@@ -725,3 +725,94 @@ func (s *Store) FindImportersByPath(target string, depth, limit int) ([]Importer
 
 	return results, nil
 }
+
+// ImpactResult holds a transitive caller analysis result.
+type ImpactResult struct {
+	Symbol  string `json:"symbol"`   // the callee
+	Caller  string `json:"caller"`   // the calling function
+	File    string `json:"file"`     // abs path of caller's file
+	RelPath string `json:"rel_path"` // relative path
+	Line    int    `json:"line"`     // line of the call
+	Depth   int    `json:"depth"`    // hop distance from original
+}
+
+// EnclosingSymbol returns the name of the narrowest symbol that encloses a line in a file.
+func (s *Store) EnclosingSymbol(filePath string, line int) (string, error) {
+	var name string
+	err := s.db.QueryRow(`
+		SELECT s.name FROM symbols s
+		WHERE s.file_id = (SELECT id FROM files WHERE path = ?)
+		  AND s.start_line <= ? AND s.end_line >= ?
+		ORDER BY (s.end_line - s.start_line) ASC
+		LIMIT 1
+	`, filePath, line, line).Scan(&name)
+	if err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+// FindImpact performs transitive caller analysis using BFS.
+func (s *Store) FindImpact(symbolName string, depth, limit int) ([]ImpactResult, error) {
+	if depth <= 0 {
+		depth = 2
+	}
+	if depth > 5 {
+		depth = 5
+	}
+
+	seen := make(map[string]bool)
+	var results []ImpactResult
+	currentSymbols := []string{symbolName}
+
+	for d := 1; d <= depth && len(currentSymbols) > 0 && len(results) < limit; d++ {
+		var nextSymbols []string
+		for _, sym := range currentSymbols {
+			rows, err := s.db.Query(`
+				SELECT f.path, f.rel_path, r.line, r.name
+				FROM refs r JOIN files f ON r.file_id = f.id
+				WHERE r.name = ?
+			`, sym)
+			if err != nil {
+				continue
+			}
+			for rows.Next() {
+				var filePath, relPath, refName string
+				var line int
+				if err := rows.Scan(&filePath, &relPath, &line, &refName); err != nil {
+					continue
+				}
+
+				caller, err := s.EnclosingSymbol(filePath, line)
+				if err != nil || caller == "" || caller == sym {
+					continue
+				}
+
+				key := caller + "@" + filePath
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+
+				results = append(results, ImpactResult{
+					Symbol:  sym,
+					Caller:  caller,
+					File:    filePath,
+					RelPath: relPath,
+					Line:    line,
+					Depth:   d,
+				})
+				nextSymbols = append(nextSymbols, caller)
+
+				if len(results) >= limit {
+					rows.Close()
+					return results, nil
+				}
+			}
+			rows.Close()
+		}
+		currentSymbols = nextSymbols
+	}
+
+	return results, nil
+}

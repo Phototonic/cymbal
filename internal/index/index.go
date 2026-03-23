@@ -484,6 +484,90 @@ func FindImportersByPath(dbPath, target string, depth, limit int) ([]ImporterRes
 	return store.FindImportersByPath(target, depth, limit)
 }
 
+// ContextResult bundles all context needed to understand a symbol.
+type ContextResult struct {
+	Symbol      SymbolResult   `json:"symbol"`
+	Source      string         `json:"source"`
+	TypeRefs    []SymbolResult `json:"type_refs"`
+	Callers     []RefResult    `json:"callers"`
+	FileImports []string       `json:"file_imports"`
+}
+
+// SymbolContext returns bundled context for a symbol: source, type refs, callers, and file imports.
+func SymbolContext(dbPath, symbolName string, callerLimit int) (*ContextResult, error) {
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+
+	// Resolve symbol by exact name.
+	results, err := store.SearchSymbols(symbolName, "", "", true, 100)
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, fmt.Errorf("symbol not found: %s", symbolName)
+	}
+	if len(results) > 1 {
+		return nil, &AmbiguousError{Name: symbolName, Matches: results}
+	}
+
+	sym := results[0]
+
+	// Read source from file.
+	source := readLines(sym.File, sym.StartLine, sym.EndLine)
+
+	// Find type-like symbols referenced in the symbol's range.
+	typeRefs, err := store.TypeRefsInRange(sym.File, sym.StartLine, sym.EndLine)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find callers.
+	callers, err := store.FindReferences(sym.Name, callerLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get file imports.
+	imports, err := store.FileImports(sym.File)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ContextResult{
+		Symbol:      sym,
+		Source:      source,
+		TypeRefs:    typeRefs,
+		Callers:     callers,
+		FileImports: imports,
+	}, nil
+}
+
+// AmbiguousError is returned when a symbol name matches multiple symbols.
+type AmbiguousError struct {
+	Name    string
+	Matches []SymbolResult
+}
+
+func (e *AmbiguousError) Error() string {
+	return fmt.Sprintf("multiple matches for '%s'", e.Name)
+}
+
+// FindImpact performs transitive caller analysis for a symbol.
+func FindImpact(dbPath, symbolName string, depth, limit int) ([]ImpactResult, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	return store.FindImpact(symbolName, depth, limit)
+}
+
 // SymbolsByName finds symbols by exact name (for show command).
 func SymbolsByName(dbPath, name string) ([]SymbolResult, error) {
 	store, err := OpenStore(dbPath)
