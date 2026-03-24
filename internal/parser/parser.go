@@ -403,6 +403,41 @@ func (e *symbolExtractor) classifyGo(nodeType string, node *sitter.Node) (string
 func (e *symbolExtractor) classifyPython(nodeType string, node *sitter.Node) (string, *sitter.Node) {
 	switch nodeType {
 	case "function_definition":
+		// Skip if parent is decorated_definition — the parent already emits this symbol.
+		if node.Parent() != nil && node.Parent().Type() == "decorated_definition" {
+			return "", nil
+		}
+		nameNode := node.ChildByFieldName("name")
+		if nameNode != nil {
+			name := nameNode.Content(e.src)
+			if len(name) > 0 && name[0] == '_' && name != "__init__" {
+				return "", nil
+			}
+		}
+		return "function", nameNode
+	case "class_definition":
+		// Skip if parent is decorated_definition — the parent already emits this symbol.
+		if node.Parent() != nil && node.Parent().Type() == "decorated_definition" {
+			return "", nil
+		}
+		return "class", node.ChildByFieldName("name")
+	case "decorated_definition":
+		for i := range int(node.ChildCount()) {
+			child := node.Child(i)
+			kind, nameNode := e.classifyPythonInner(child.Type(), child)
+			if kind != "" {
+				return kind, nameNode
+			}
+		}
+	}
+	return "", nil
+}
+
+// classifyPythonInner is used by decorated_definition to classify the inner
+// function/class without the parent check (which would infinitely skip).
+func (e *symbolExtractor) classifyPythonInner(nodeType string, node *sitter.Node) (string, *sitter.Node) {
+	switch nodeType {
+	case "function_definition":
 		nameNode := node.ChildByFieldName("name")
 		if nameNode != nil {
 			name := nameNode.Content(e.src)
@@ -413,14 +448,6 @@ func (e *symbolExtractor) classifyPython(nodeType string, node *sitter.Node) (st
 		return "function", nameNode
 	case "class_definition":
 		return "class", node.ChildByFieldName("name")
-	case "decorated_definition":
-		for i := range int(node.ChildCount()) {
-			child := node.Child(i)
-			kind, nameNode := e.classifyPython(child.Type(), child)
-			if kind != "" {
-				return kind, nameNode
-			}
-		}
 	}
 	return "", nil
 }
