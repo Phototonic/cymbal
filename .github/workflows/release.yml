@@ -54,6 +54,8 @@ jobs:
 
       - name: Build linux/arm64 (zig cross)
         run: |
+          go clean -cache
+
           cat > /tmp/zig-cc << 'EOF'
           #!/bin/sh
           exec zig cc -target aarch64-linux-gnu "$@"
@@ -62,7 +64,7 @@ jobs:
 
           CC=/tmp/zig-cc CGO_ENABLED=1 CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" \
             GOOS=linux GOARCH=arm64 \
-            go build -trimpath -ldflags="-s -w -linkmode=external -extld=/tmp/zig-cc" -o cymbal .
+            go build -trimpath -ldflags="-s -w" -o cymbal .
           tar czf cymbal_linux_arm64.tar.gz cymbal
           rm cymbal
 
