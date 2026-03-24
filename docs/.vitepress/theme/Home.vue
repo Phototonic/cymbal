@@ -8,7 +8,7 @@ const features = [
     description: 'Every command returns YAML frontmatter + content body — optimized for LLM token efficiency. Agents parse metadata and read content naturally.',
   },
   {
-    title: '89x Faster Indexing',
+    title: 'Instant Indexing',
     description: 'Tree-sitter AST parsing with SQLite FTS5 storage. Index an entire codebase in ~100ms. Incremental re-indexing only touches changed files.',
   },
   {
