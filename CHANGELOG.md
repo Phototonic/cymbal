@@ -2,6 +2,16 @@
 
 All notable changes to cymbal are documented here.
 
+## [0.4.1] - 2026-03-24
+
+### Added
+
+- Benchmark suite now tracks output size (bytes + approximate tokens) per query, comparing token efficiency across tools. Ripgrep refs and show equivalents added for fair comparison.
+
+### Fixed
+
+- Python decorated functions and classes no longer appear twice in outline/search/show. Tree-sitter's `decorated_definition` wrapper was causing double emission — inner `function_definition`/`class_definition` nodes are now skipped when their parent already emitted them.
+
 ## [0.4.0] - 2026-03-24
 
 ### Changed
