@@ -119,7 +119,10 @@ func LangForFile(path string) string {
 }
 
 // Walk concurrently discovers all source files under root.
-func Walk(root string, workers int) ([]FileEntry, error) {
+// If langFilter is non-nil, only files whose language passes the filter are emitted.
+// This avoids building FileEntry structs and stat-ing files that will be immediately
+// skipped (e.g., .json, .md, .toml that the parser doesn't support).
+func Walk(root string, workers int, langFilter func(string) bool) ([]FileEntry, error) {
 	if workers <= 0 {
 		workers = 8
 	}
@@ -136,6 +139,9 @@ func Walk(root string, workers int) ([]FileEntry, error) {
 			for path := range ch {
 				lang := LangForFile(path)
 				if lang == "" {
+					continue
+				}
+				if langFilter != nil && !langFilter(lang) {
 					continue
 				}
 				info, err := os.Lstat(path)

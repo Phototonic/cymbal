@@ -136,7 +136,7 @@ func flushBatch(store *Store, batch []parseResult, indexed, found, writeErrs *at
 		}
 
 		err := InsertFileAllStmts(stmts, pr.entry.Path, pr.entry.RelPath,
-			pr.entry.Language, pr.hash, pr.entry.ModTime,
+			pr.entry.Language, pr.hash, pr.entry.ModTime, pr.entry.Size,
 			pr.result.Symbols, pr.result.Imports, pr.result.Refs)
 		if err != nil {
 			tx.Exec("ROLLBACK TO " + sp)
@@ -190,15 +190,15 @@ func Index(root, dbPath string, opts Options) (*Stats, error) {
 		return nil, fmt.Errorf("setting repo metadata: %w", err)
 	}
 
-	files, err := walker.Walk(root, workers)
+	files, err := walker.Walk(root, workers, parser.SupportedLanguage)
 	if err != nil {
 		return nil, fmt.Errorf("walking directory: %w", err)
 	}
 
-	// Load all stored mtimes in one query for fast skip checks.
-	mtimes, _ := store.AllFileMtimes()
-	if mtimes == nil {
-		mtimes = make(map[string]time.Time)
+	// Load all stored mtime_ns + size in one query for fast skip checks.
+	fileChecks, _ := store.AllFileChecks()
+	if fileChecks == nil {
+		fileChecks = make(map[string]FileCheck)
 	}
 
 	// Phase 0: prune stale files (deleted/renamed since last index).
@@ -245,7 +245,7 @@ func Index(root, dbPath string, opts Options) (*Stats, error) {
 				}
 
 				if !opts.Force {
-					if storedMtime, ok := mtimes[f.Path]; ok && !storedMtime.IsZero() && !f.ModTime.After(storedMtime) {
+					if fc, ok := fileChecks[f.Path]; ok && fc.MtimeNs == f.ModTime.UnixNano() && fc.Size == f.Size {
 						unchanged.Add(1)
 						continue
 					}
@@ -266,7 +266,7 @@ func Index(root, dbPath string, opts Options) (*Stats, error) {
 
 				// Only compute hash when there's a stored entry to compare against.
 				var hash string
-				if _, exists := mtimes[f.Path]; exists {
+				if _, exists := fileChecks[f.Path]; exists {
 					hash = HashBytes(src)
 				}
 

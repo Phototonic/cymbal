@@ -22,13 +22,15 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 
 CREATE TABLE IF NOT EXISTS files (
-	id       INTEGER PRIMARY KEY AUTOINCREMENT,
-	path     TEXT UNIQUE NOT NULL,
-	rel_path TEXT NOT NULL,
-	language TEXT NOT NULL,
-	hash     TEXT NOT NULL,
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	path       TEXT UNIQUE NOT NULL,
+	rel_path   TEXT NOT NULL,
+	language   TEXT NOT NULL,
+	hash       TEXT NOT NULL,
 	indexed_at DATETIME NOT NULL,
-	mtime    DATETIME
+	mtime      DATETIME,
+	mtime_ns   INTEGER,
+	size       INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS symbols (
@@ -111,8 +113,10 @@ func OpenStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("initializing schema: %w", err)
 	}
 
-	// Migration: add mtime column for existing databases.
+	// Migrations: add columns for existing databases (silently ignored if present).
 	db.Exec("ALTER TABLE files ADD COLUMN mtime DATETIME")
+	db.Exec("ALTER TABLE files ADD COLUMN mtime_ns INTEGER")
+	db.Exec("ALTER TABLE files ADD COLUMN size INTEGER")
 
 	db.Exec("PRAGMA cache_size = -64000")
 	db.Exec("PRAGMA mmap_size = 268435456")
@@ -156,32 +160,28 @@ func (s *Store) FileHash(filePath string) (string, error) {
 	return hash, err
 }
 
-// FileMtime returns the stored modification time for a file.
-func (s *Store) FileMtime(filePath string) (time.Time, error) {
-	var mtime time.Time
-	err := s.db.QueryRow("SELECT mtime FROM files WHERE path = ?", filePath).Scan(&mtime)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return mtime, nil
+// FileCheck holds stored mtime (nanoseconds) + size for change detection.
+type FileCheck struct {
+	MtimeNs int64
+	Size    int64
 }
 
-// AllFileMtimes loads all file paths and their stored mtimes in one query.
-func (s *Store) AllFileMtimes() (map[string]time.Time, error) {
-	rows, err := s.db.Query("SELECT path, mtime FROM files WHERE mtime IS NOT NULL")
+// AllFileChecks loads all file paths with their stored mtime_ns and size.
+func (s *Store) AllFileChecks() (map[string]FileCheck, error) {
+	rows, err := s.db.Query("SELECT path, COALESCE(mtime_ns, 0), COALESCE(size, -1) FROM files")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	m := make(map[string]time.Time)
+	m := make(map[string]FileCheck)
 	for rows.Next() {
 		var path string
-		var mtime time.Time
-		if err := rows.Scan(&path, &mtime); err != nil {
+		var fc FileCheck
+		if err := rows.Scan(&path, &fc.MtimeNs, &fc.Size); err != nil {
 			continue
 		}
-		m[path] = mtime
+		m[path] = fc
 	}
 	return m, nil
 }
@@ -276,13 +276,13 @@ func HashBytes(data []byte) string {
 }
 
 // UpsertFile stores file info and returns the file ID. Clears old data via cascade.
-func (s *Store) UpsertFile(filePath, relPath, lang, hash string, mtime time.Time) (int64, error) {
+func (s *Store) UpsertFile(filePath, relPath, lang, hash string, mtime time.Time, size int64) (int64, error) {
 	now := time.Now()
 	s.db.Exec("DELETE FROM files WHERE path = ?", filePath)
 
 	res, err := s.db.Exec(
-		"INSERT INTO files (path, rel_path, language, hash, indexed_at, mtime) VALUES (?, ?, ?, ?, ?, ?)",
-		filePath, relPath, lang, hash, now, mtime,
+		"INSERT INTO files (path, rel_path, language, hash, indexed_at, mtime_ns, size) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		filePath, relPath, lang, hash, now, mtime.UnixNano(), size,
 	)
 	if err != nil {
 		return 0, err
@@ -395,27 +395,27 @@ func insertRefsTx(tx *sql.Tx, fileID int64, refs []symbols.Ref) error {
 
 // InsertFileAll inserts a file and all its data (symbols, imports, refs) in a single
 // transaction operation. Designed for use within an external transaction via InsertFileAllTx.
-func (s *Store) InsertFileAll(filePath, relPath, lang, hash string, mtime time.Time, syms []symbols.Symbol, imports []symbols.Import, refs []symbols.Ref) error {
+func (s *Store) InsertFileAll(filePath, relPath, lang, hash string, mtime time.Time, size int64, syms []symbols.Symbol, imports []symbols.Import, refs []symbols.Ref) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	if err := s.InsertFileAllTx(tx, filePath, relPath, lang, hash, mtime, syms, imports, refs); err != nil {
+	if err := s.InsertFileAllTx(tx, filePath, relPath, lang, hash, mtime, size, syms, imports, refs); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
 // InsertFileAllTx inserts a file and all its data within an existing transaction.
-func (s *Store) InsertFileAllTx(tx *sql.Tx, filePath, relPath, lang, hash string, mtime time.Time, syms []symbols.Symbol, imports []symbols.Import, refs []symbols.Ref) error {
+func (s *Store) InsertFileAllTx(tx *sql.Tx, filePath, relPath, lang, hash string, mtime time.Time, size int64, syms []symbols.Symbol, imports []symbols.Import, refs []symbols.Ref) error {
 	now := time.Now()
 	tx.Exec("DELETE FROM files WHERE path = ?", filePath)
 
 	res, err := tx.Exec(
-		"INSERT INTO files (path, rel_path, language, hash, indexed_at, mtime) VALUES (?, ?, ?, ?, ?, ?)",
-		filePath, relPath, lang, hash, now, mtime,
+		"INSERT INTO files (path, rel_path, language, hash, indexed_at, mtime_ns, size) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		filePath, relPath, lang, hash, now, mtime.UnixNano(), size,
 	)
 	if err != nil {
 		return err
@@ -458,7 +458,7 @@ func PrepareBatchStmts(tx *sql.Tx) (*BatchStmts, error) {
 		return nil, err
 	}
 	b.insFile, err = tx.Prepare(
-		"INSERT INTO files (path, rel_path, language, hash, indexed_at, mtime) VALUES (?, ?, ?, ?, ?, ?)")
+		"INSERT INTO files (path, rel_path, language, hash, indexed_at, mtime_ns, size) VALUES (?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		b.Close()
 		return nil, err
@@ -503,11 +503,11 @@ func (b *BatchStmts) Close() {
 }
 
 // InsertFileAllStmts inserts a file and all its data using pre-prepared statements.
-func InsertFileAllStmts(b *BatchStmts, filePath, relPath, lang, hash string, mtime time.Time, syms []symbols.Symbol, imports []symbols.Import, refs []symbols.Ref) error {
+func InsertFileAllStmts(b *BatchStmts, filePath, relPath, lang, hash string, mtime time.Time, size int64, syms []symbols.Symbol, imports []symbols.Import, refs []symbols.Ref) error {
 	now := time.Now()
 	b.delFile.Exec(filePath) //nolint:errcheck
 
-	res, err := b.insFile.Exec(filePath, relPath, lang, hash, now, mtime)
+	res, err := b.insFile.Exec(filePath, relPath, lang, hash, now, mtime.UnixNano(), size)
 	if err != nil {
 		return err
 	}
