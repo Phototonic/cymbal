@@ -15,10 +15,23 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    # macOS runner handles CGO cross-compilation for both darwin targets
-    # and can cross-compile to linux via goreleaser's CC overrides.
-    runs-on: macos-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+          - runner: macos-13
+            goos: darwin
+            goarch: amd64
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Resolve release ref
@@ -45,13 +58,60 @@ jobs:
       - name: Run tests
         run: CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go test ./...
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
+      - name: Build binary
         env:
+          CGO_ENABLED: "1"
           CGO_CFLAGS: "-DSQLITE_ENABLE_FTS5"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -trimpath -ldflags="-s -w" -o cymbal .
+          tar czf cymbal_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz cymbal
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cymbal_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: cymbal_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Rename archives
+        run: |
+          cd dist
+          for dir in cymbal_*; do
+            mv "$dir"/*.tar.gz .
+          done
+          # Normalize names: linux amd64 -> x86_64
+          [ -f cymbal_linux_amd64.tar.gz ] && mv cymbal_linux_amd64.tar.gz cymbal_${{ steps.tag.outputs.tag }}_linux_x86_64.tar.gz
+          [ -f cymbal_linux_arm64.tar.gz ] && mv cymbal_linux_arm64.tar.gz cymbal_${{ steps.tag.outputs.tag }}_linux_arm64.tar.gz
+          [ -f cymbal_darwin_amd64.tar.gz ] && mv cymbal_darwin_amd64.tar.gz cymbal_${{ steps.tag.outputs.tag }}_darwin_x86_64.tar.gz
+          [ -f cymbal_darwin_arm64.tar.gz ] && mv cymbal_darwin_arm64.tar.gz cymbal_${{ steps.tag.outputs.tag }}_darwin_arm64.tar.gz
+          sha256sum cymbal_*.tar.gz > checksums.txt
+          ls -la
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            dist/cymbal_*.tar.gz
+            dist/checksums.txt
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
