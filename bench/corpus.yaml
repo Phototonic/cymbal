@@ -1,0 +1,31 @@
+# Benchmark corpus — pinned refs for reproducibility.
+# Run: go run ./bench setup   (clones repos into bench/.corpus/)
+# Run: go run ./bench run     (executes benchmarks)
+
+repos:
+  - name: cli
+    url: https://github.com/cli/cli
+    ref: v2.65.0
+    language: go
+    symbols:
+      - NewCmdRoot
+      - Repository
+      - NewHTTPClient
+
+  - name: fastapi
+    url: https://github.com/fastapi/fastapi
+    ref: "0.115.6"
+    language: python
+    symbols:
+      - FastAPI
+      - Depends
+      - APIRouter
+
+  - name: vite
+    url: https://github.com/vitejs/vite
+    ref: v6.0.0
+    language: typescript
+    symbols:
+      - resolveConfig
+      - Plugin
+      - createServer
