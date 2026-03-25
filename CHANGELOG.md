@@ -2,6 +2,22 @@
 
 All notable changes to cymbal are documented here.
 
+## [0.5.0] - 2026-03-25
+
+### Added
+
+- `cymbal investigate <symbol>` — kind-adaptive symbol exploration. Returns the right shape of information based on what a symbol is: functions get source + callers + shallow impact; types get source + members + references; ambiguous names get ranked candidates. Eliminates the agent's decision loop of choosing between search/show/refs/impact.
+- `ChildSymbols` store method for querying methods/fields by parent type name.
+- Benchmark suite now tracks output size (bytes + approximate tokens) and includes ripgrep refs/show equivalents for fair token efficiency comparison.
+
+### Fixed
+
+- TypeScript/JavaScript `export` statement dedup — exported functions, classes, interfaces, types, and enums no longer appear twice in the index (same pattern as the Python decorator fix in v0.4.1).
+
+### Changed
+
+- README rewritten with workflow-centric agent integration guide. `investigate` is the recommended default, specific commands are escape hatches.
+
 ## [0.4.1] - 2026-03-24
 
 ### Added
