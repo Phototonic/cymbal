@@ -454,12 +454,34 @@ func (e *symbolExtractor) classifyPythonInner(nodeType string, node *sitter.Node
 
 func (e *symbolExtractor) classifyJS(nodeType string, node *sitter.Node) (string, *sitter.Node) {
 	switch nodeType {
+	case "function_declaration", "class_declaration", "interface_declaration",
+		"type_alias_declaration", "enum_declaration", "lexical_declaration":
+		// Skip if parent is export_statement — the parent already emits this symbol.
+		if node.Parent() != nil && node.Parent().Type() == "export_statement" {
+			return "", nil
+		}
+		return e.classifyJSInner(nodeType, node)
+	case "method_definition":
+		return "method", node.ChildByFieldName("name")
+	case "export_statement":
+		for i := range int(node.ChildCount()) {
+			child := node.Child(i)
+			kind, nameNode := e.classifyJSInner(child.Type(), child)
+			if kind != "" {
+				return kind, nameNode
+			}
+		}
+	}
+	return "", nil
+}
+
+// classifyJSInner classifies JS/TS nodes without the export_statement parent check.
+func (e *symbolExtractor) classifyJSInner(nodeType string, node *sitter.Node) (string, *sitter.Node) {
+	switch nodeType {
 	case "function_declaration":
 		return "function", node.ChildByFieldName("name")
 	case "class_declaration":
 		return "class", node.ChildByFieldName("name")
-	case "method_definition":
-		return "method", node.ChildByFieldName("name")
 	case "interface_declaration":
 		return "interface", node.ChildByFieldName("name")
 	case "type_alias_declaration":
@@ -475,14 +497,6 @@ func (e *symbolExtractor) classifyJS(nodeType string, node *sitter.Node) (string
 				if valueNode != nil && (valueNode.Type() == "arrow_function" || valueNode.Type() == "function") {
 					return "function", nameNode
 				}
-			}
-		}
-	case "export_statement":
-		for i := range int(node.ChildCount()) {
-			child := node.Child(i)
-			kind, nameNode := e.classifyJS(child.Type(), child)
-			if kind != "" {
-				return kind, nameNode
 			}
 		}
 	}

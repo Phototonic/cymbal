@@ -772,6 +772,70 @@ func (e *AmbiguousError) Error() string {
 	return fmt.Sprintf("multiple matches for '%s'", e.Name)
 }
 
+// InvestigateResult is a kind-adaptive response that returns
+// the right shape of information based on what the symbol is.
+type InvestigateResult struct {
+	Symbol  SymbolResult   `json:"symbol"`
+	Source  string         `json:"source"`
+	Kind    string         `json:"investigate_kind"`  // "function", "type", "module"
+	Refs    []RefResult    `json:"refs,omitempty"`    // callers/usages (functions)
+	Impact  []ImpactResult `json:"impact,omitempty"`  // transitive callers (functions)
+	Members []SymbolResult `json:"members,omitempty"` // methods/fields (types)
+	Outline []SymbolResult `json:"outline,omitempty"` // file overview (when symbol is a file-level type)
+}
+
+// Investigate returns kind-adaptive context for a symbol.
+// The symbol's kind (from the index) drives which data is included:
+//   - function/method: source + refs + shallow impact
+//   - class/struct/type/interface: source + members + importers-as-refs
+//   - ambiguous: returns AmbiguousError with ranked candidates
+func Investigate(dbPath, symbolName string) (*InvestigateResult, error) {
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+
+	results, err := store.SearchSymbols(symbolName, "", "", true, 100)
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, fmt.Errorf("symbol not found: %s", symbolName)
+	}
+	if len(results) > 1 {
+		return nil, &AmbiguousError{Name: symbolName, Matches: results}
+	}
+
+	sym := results[0]
+	source := readLines(sym.File, sym.StartLine, sym.EndLine)
+
+	res := &InvestigateResult{
+		Symbol: sym,
+		Source: source,
+	}
+
+	switch sym.Kind {
+	case "function", "method":
+		res.Kind = "function"
+		res.Refs, _ = store.FindReferences(sym.Name, 20)
+		res.Impact, _ = store.FindImpact(sym.Name, 2, 20)
+
+	case "class", "struct", "type", "interface", "trait", "enum":
+		res.Kind = "type"
+		res.Members, _ = store.ChildSymbols(sym.Name, 50)
+		// For types, show who references the type name.
+		res.Refs, _ = store.FindReferences(sym.Name, 20)
+
+	default:
+		// Unknown kind — return source + refs as best effort.
+		res.Kind = sym.Kind
+		res.Refs, _ = store.FindReferences(sym.Name, 20)
+	}
+
+	return res, nil
+}
+
 // FindImpact performs transitive caller analysis for a symbol.
 func FindImpact(dbPath, symbolName string, depth, limit int) ([]ImpactResult, error) {
 	if limit <= 0 {

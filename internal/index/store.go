@@ -644,6 +644,31 @@ func (s *Store) FileSymbols(filePath string) ([]SymbolResult, error) {
 	return results, rows.Err()
 }
 
+// ChildSymbols returns symbols whose parent matches the given name (e.g., methods on a type).
+func (s *Store) ChildSymbols(parentName string, limit int) ([]SymbolResult, error) {
+	rows, err := s.db.Query(`
+		SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, COALESCE(s.summary, ''), s.language
+		FROM symbols s JOIN files f ON s.file_id = f.id
+		WHERE s.parent = ?
+		ORDER BY s.start_line
+		LIMIT ?
+	`, parentName, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []SymbolResult
+	for rows.Next() {
+		var r SymbolResult
+		if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Summary, &r.Language); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
 // RepoStats returns overview statistics for this database.
 func (s *Store) RepoStats() (*RepoStatsResult, error) {
 	repoRoot, _ := s.GetMeta("repo_root")
