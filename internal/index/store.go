@@ -994,6 +994,141 @@ func (s *Store) EnclosingSymbol(filePath string, line int) (string, error) {
 	return name, nil
 }
 
+// TraceResult represents a single edge in a downward call trace.
+type TraceResult struct {
+	Caller  string `json:"caller"`   // the function making the call
+	Callee  string `json:"callee"`   // the function being called
+	File    string `json:"file"`     // abs path where the call happens
+	RelPath string `json:"rel_path"` // relative path
+	Line    int    `json:"line"`     // line of the call
+	Depth   int    `json:"depth"`    // hop distance from root
+}
+
+// FindTrace performs downward call graph traversal using BFS.
+// Starting from a symbol, it finds what that symbol calls, then what those call, etc.
+func (s *Store) FindTrace(symbolName string, depth, limit int) ([]TraceResult, error) {
+	if depth <= 0 {
+		depth = 3
+	}
+	if depth > 5 {
+		depth = 5
+	}
+
+	// Resolve the root symbol to get its file and line range.
+	type symLoc struct {
+		name      string
+		file      string
+		startLine int
+		endLine   int
+	}
+
+	resolveSymbol := func(name string) []symLoc {
+		rows, err := s.db.Query(`
+			SELECT s.name, f.path, s.start_line, s.end_line
+			FROM symbols s JOIN files f ON s.file_id = f.id
+			WHERE s.name = ?
+		`, name)
+		if err != nil {
+			return nil
+		}
+		defer rows.Close()
+		var locs []symLoc
+		for rows.Next() {
+			var loc symLoc
+			if err := rows.Scan(&loc.name, &loc.file, &loc.startLine, &loc.endLine); err != nil {
+				continue
+			}
+			locs = append(locs, loc)
+		}
+		return locs
+	}
+
+	// Find refs inside a symbol's line range (its callees).
+	calleesOf := func(loc symLoc) []TraceResult {
+		rows, err := s.db.Query(`
+			SELECT r.name, f.path, f.rel_path, r.line
+			FROM refs r JOIN files f ON r.file_id = f.id
+			WHERE f.path = ? AND r.line >= ? AND r.line <= ?
+		`, loc.file, loc.startLine, loc.endLine)
+		if err != nil {
+			return nil
+		}
+		defer rows.Close()
+		var results []TraceResult
+		for rows.Next() {
+			var tr TraceResult
+			if err := rows.Scan(&tr.Callee, &tr.File, &tr.RelPath, &tr.Line); err != nil {
+				continue
+			}
+			tr.Caller = loc.name
+			results = append(results, tr)
+		}
+		return results
+	}
+
+	// Filter out builtins and stdlib noise — keep only project-defined symbols.
+	isProjectSymbol := func(name string) bool {
+		// Skip Go builtins, common stdlib methods, and type casts.
+		switch name {
+		case "len", "cap", "make", "append", "close", "delete", "copy", "new", "panic", "recover",
+			"int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64",
+			"float32", "float64", "string", "bool", "byte", "rune", "error", "nil",
+			"Errorf", "Sprintf", "Fprintf", "Printf", "Println",
+			"Error", "String", "Close", "Read", "Write",
+			"Lock", "Unlock", "RLock", "RUnlock",
+			"Add", "Load", "Store", "Done", "Wait",
+			"Begin", "Commit", "Rollback", "Exec", "Query", "QueryRow", "Scan",
+			"Now", "Since", "Sleep",
+			"Join", "Split", "Contains", "HasPrefix", "HasSuffix", "TrimPrefix", "TrimSuffix",
+			"Open", "Create", "Remove", "Stat", "Lstat", "ReadFile", "WriteFile",
+			"Abs", "Dir", "Base", "Ext", "Rel",
+			"Go", "Next", "Rows":
+			return false
+		}
+		// Skip single-letter or very short names (usually loop vars or generics).
+		if len(name) <= 2 {
+			return false
+		}
+		return true
+	}
+
+	seen := make(map[string]bool)
+	var results []TraceResult
+	currentLocs := resolveSymbol(symbolName)
+
+	for d := 1; d <= depth && len(currentLocs) > 0 && len(results) < limit; d++ {
+		var nextLocs []symLoc
+		for _, loc := range currentLocs {
+			callees := calleesOf(loc)
+			for _, tr := range callees {
+				if tr.Callee == loc.name || !isProjectSymbol(tr.Callee) {
+					continue
+				}
+				key := loc.name + "→" + tr.Callee
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+
+				tr.Depth = d
+				results = append(results, tr)
+
+				// Resolve the callee for the next depth level.
+				for _, nextLoc := range resolveSymbol(tr.Callee) {
+					nextLocs = append(nextLocs, nextLoc)
+				}
+
+				if len(results) >= limit {
+					return results, nil
+				}
+			}
+		}
+		currentLocs = nextLocs
+	}
+
+	return results, nil
+}
+
 // FindImpact performs transitive caller analysis using BFS.
 func (s *Store) FindImpact(symbolName string, depth, limit int) ([]ImpactResult, error) {
 	if depth <= 0 {

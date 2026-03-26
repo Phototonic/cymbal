@@ -870,6 +870,19 @@ func FindImpact(dbPath, symbolName string, depth, limit int) ([]ImpactResult, er
 	return store.FindImpact(symbolName, depth, limit)
 }
 
+// FindTrace performs downward call graph traversal for a symbol.
+func FindTrace(dbPath, symbolName string, depth, limit int) ([]TraceResult, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	return store.FindTrace(symbolName, depth, limit)
+}
+
 // SymbolsByName finds symbols by exact name (for show command).
 func SymbolsByName(dbPath, name string) ([]SymbolResult, error) {
 	store, err := OpenStore(dbPath)
