@@ -2,10 +2,16 @@
 
 ## Install
 
-**Homebrew** (recommended):
+**Homebrew** (macOS / Linux):
 
 ```sh
 brew install 1broseidon/tap/cymbal
+```
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/1broseidon/cymbal/main/install.ps1 | iex
 ```
 
 **Go** (requires CGO for tree-sitter + SQLite):
