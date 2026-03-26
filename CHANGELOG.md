@@ -2,6 +2,21 @@
 
 All notable changes to cymbal are documented here.
 
+## [0.7.0] - 2026-03-25
+
+### Added
+
+- Flexible symbol resolution pipeline (`flexResolve`) — shared by `show`, `investigate`, and `context`:
+  - **Ambiguity auto-resolve**: picks best match by path proximity and kind priority, notes alternatives in frontmatter (`matches: 2 (also: path:line)`)
+  - **Dot-qualified names**: `config.Load` resolves by filtering parent/path. Works for `pkg.Function` and `Class.method` patterns.
+  - **Fuzzy fallback**: exact → case-insensitive (`COLLATE NOCASE`) → FTS prefix match. Marks results with `fuzzy: true`.
+- `SearchSymbolsCI` store method for case-insensitive exact name match.
+- `InvestigateResolved` for investigating pre-resolved symbols.
+
+### Changed
+
+- `show` and `investigate` no longer error on ambiguous symbols — they auto-resolve and return the best match with disambiguation hints in frontmatter.
+
 ## [0.6.0] - 2026-03-25
 
 ### Added
