@@ -18,6 +18,7 @@ Results are ranked: exact match > prefix > fuzzy.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := strings.Join(args, " ")
 		dbPath := getDBPath(cmd)
+		ensureFresh(dbPath)
 		jsonOut := getJSONFlag(cmd)
 		kind, _ := cmd.Flags().GetString("kind")
 		limit, _ := cmd.Flags().GetInt("limit")

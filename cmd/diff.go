@@ -33,6 +33,7 @@ Examples:
 			base = args[1]
 		}
 		dbPath := getDBPath(cmd)
+		ensureFresh(dbPath)
 		jsonOut := getJSONFlag(cmd)
 		stat, _ := cmd.Flags().GetBool("stat")
 

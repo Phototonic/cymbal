@@ -353,6 +353,31 @@ func Index(root, dbPath string, opts Options) (*Stats, error) {
 	return stats, nil
 }
 
+// EnsureFresh performs a silent, incremental reindex before a query.
+// It opens the DB, reads the stored repo root, and runs the standard
+// incremental index pass (mtime+size check, parse only dirty files,
+// prune stale). Returns the number of files refreshed, or 0 if
+// everything was already current. Errors are intentionally swallowed —
+// a stale read is better than a failed query.
+func EnsureFresh(dbPath string) int {
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		return 0
+	}
+
+	repoRoot, err := store.GetMeta("repo_root")
+	store.Close()
+	if err != nil || repoRoot == "" {
+		return 0
+	}
+
+	stats, err := Index(repoRoot, dbPath, Options{})
+	if err != nil {
+		return 0
+	}
+	return stats.FilesIndexed + stats.StaleRemoved
+}
+
 // startProgress launches a goroutine that prints indexing progress to stderr.
 // It only activates after 10s to avoid flicker on small repos.
 // Close the returned channel to stop it.

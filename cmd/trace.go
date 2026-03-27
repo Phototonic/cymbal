@@ -26,6 +26,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		dbPath := getDBPath(cmd)
+		ensureFresh(dbPath)
 		jsonOut := getJSONFlag(cmd)
 		depth, _ := cmd.Flags().GetInt("depth")
 		limit, _ := cmd.Flags().GetInt("limit")

@@ -21,6 +21,7 @@ var outlineCmd = &cobra.Command{
 		}
 
 		dbPath := getDBPath(cmd)
+		ensureFresh(dbPath)
 		jsonOut := getJSONFlag(cmd)
 		sigs, _ := cmd.Flags().GetBool("signatures")
 

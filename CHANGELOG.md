@@ -2,6 +2,17 @@
 
 All notable changes to cymbal are documented here.
 
+## [0.7.3] - 2026-03-27
+
+### Added
+
+- **JIT freshness** — every query command (search, show, investigate, refs, importers, impact, trace, context, outline, diff, ls --stats) now automatically checks for changed files and reindexes them before returning results. No manual `cymbal index` needed between edits. The index is always correct.
+  - Hot path (nothing changed): ~2ms overhead on small repos, ~14ms on 3000-file repos
+  - Dirty path (files edited): only changed files are reparsed — 5 touched files on a 770-file repo adds ~40ms
+  - Deleted files are automatically pruned from the index
+  - No watch daemons, no hooks, no flags — it just works
+- `index.EnsureFresh(dbPath)` public API for programmatic use.
+
 ## [0.7.2] - 2026-03-26
 
 ### Added

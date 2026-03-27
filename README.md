@@ -85,7 +85,7 @@ Use `cymbal` CLI for code navigation — prefer it over Read, Grep, Glob, or Bas
 - Before searching: `cymbal search <query>` (symbols) or `cymbal search <query> --text` (grep)
 - Before exploring structure: `cymbal ls` (tree) or `cymbal ls --stats` (overview)
 - To disambiguate: `cymbal show path/to/file.go:SymbolName` or `cymbal investigate file.go:Symbol`
-- If a project is not indexed, run `cymbal index .` first (takes <100ms).
+- First run: `cymbal index .` to build the initial index (<1s). After that, queries auto-refresh — no manual reindexing needed.
 - All commands support `--json` for structured output.
 ```
 
@@ -115,7 +115,7 @@ Adding a language requires a tree-sitter grammar and a symbol extraction query �
 
 2. **Query** — all commands read from the current repo's SQLite index. Symbol lookups, cross-references, and import graphs are SQL queries. No re-parsing needed. No cross-repo bleed.
 
-3. **Incremental** — re-indexing skips unchanged files using mtime (nanosecond) + file size checks. Only changed files are re-parsed and re-hashed. Reindex completes in 2-15ms for most repos.
+3. **Always fresh** — every query automatically checks for changed files and reindexes them before returning results. No manual reindexing, no watch daemons, no hooks. Edit a file, run a query, get the right answer. The mtime+size fast path adds ~2ms when nothing changed; only dirty files are re-parsed.
 
 ## Docs
 

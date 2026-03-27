@@ -23,6 +23,7 @@ Note: references are best-effort based on AST name matching, not semantic analys
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		dbPath := getDBPath(cmd)
+		ensureFresh(dbPath)
 		jsonOut := getJSONFlag(cmd)
 		importers, _ := cmd.Flags().GetBool("importers")
 		impact, _ := cmd.Flags().GetBool("impact")

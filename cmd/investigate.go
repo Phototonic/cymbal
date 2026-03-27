@@ -32,6 +32,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		dbPath := getDBPath(cmd)
+		ensureFresh(dbPath)
 		jsonOut := getJSONFlag(cmd)
 
 		res, err := flexResolve(dbPath, name)

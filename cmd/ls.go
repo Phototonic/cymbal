@@ -63,6 +63,7 @@ func lsRepos(jsonOut bool) error {
 
 func lsStats(cmd *cobra.Command, jsonOut bool) error {
 	dbPath := getDBPath(cmd)
+	ensureFresh(dbPath)
 
 	stats, err := index.RepoStats(dbPath)
 	if err != nil {
