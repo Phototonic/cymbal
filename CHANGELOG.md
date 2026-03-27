@@ -2,12 +2,13 @@
 
 All notable changes to cymbal are documented here.
 
-## [Unreleased]
+## [0.8.0] - 2026-03-27
 
 ### Added
 
 - **`cymbal structure`** — structural overview of an indexed codebase. Shows entry points, most-referenced symbols (by call-site count), largest packages, and most-imported files. All derived from existing index data — no AI, no guessing. Answers "I've never seen this repo, where do I start?" Supports `--json`.
 - **Batch mode** for symbol commands — `investigate`, `show`, `refs`, `context`, and `impact` now accept multiple symbols: `cymbal investigate Foo Bar Baz`. One invocation, one JIT freshness check, multiple results. Reduces agent round-trips.
+- **Benchmark harness v2** — `go run ./bench run` now measures speed, accuracy (37/37 ground-truth checks), token efficiency vs ripgrep, JIT freshness overhead, and agent workflow savings across gin, kubectl, and fastapi.
 
 ## [0.7.3] - 2026-03-27
 
