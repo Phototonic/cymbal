@@ -215,7 +215,7 @@ func runBench(tool Tool, op Op, repoDir, symbol string, iters int, before ...pre
 		cmd := tool.Ops[op](repoDir, symbol)
 		cmd.Dir = repoDir
 		d, out, err := timeCmd(cmd)
-		if err != nil && op != OpSearch {
+		if err != nil && op != OpSearch && op != OpRefs {
 			fmt.Fprintf(os.Stderr, "  WARN: %s %s %s %s: %v\n", tool.Name, op, r.Repo, symbol, err)
 		}
 		r.Timings = append(r.Timings, d)
