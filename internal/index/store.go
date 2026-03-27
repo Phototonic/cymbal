@@ -558,6 +558,158 @@ func (r SymbolResult) SymbolID() string {
 	return fmt.Sprintf("%s:%s:%s:%s:%d", r.RelPath, r.Language, r.Kind, r.Name, r.StartLine)
 }
 
+// StructureResult holds the output of a structural analysis.
+type StructureResult struct {
+	RepoRoot       string          `json:"repo_root"`
+	Files          int             `json:"files"`
+	Symbols        int             `json:"symbols"`
+	Languages      map[string]int  `json:"languages"`
+	EntryPoints    []SymbolResult  `json:"entry_points"`
+	TopByRefs      []RankedSymbol  `json:"top_by_refs"`
+	TopByImportFan []RankedFile    `json:"top_by_import_fan"`
+	TopPackages    []RankedPackage `json:"top_packages"`
+}
+
+// RankedSymbol is a symbol with a count (e.g., ref count).
+type RankedSymbol struct {
+	SymbolResult
+	Count int `json:"count"`
+}
+
+// RankedFile is a file path with a count (e.g., import fan-in).
+type RankedFile struct {
+	RelPath  string `json:"rel_path"`
+	Language string `json:"language"`
+	Count    int    `json:"count"`
+}
+
+// RankedPackage is a directory with symbol count.
+type RankedPackage struct {
+	Path    string `json:"path"`
+	Symbols int    `json:"symbols"`
+	Files   int    `json:"files"`
+}
+
+// Structure returns a structural overview of the indexed codebase.
+func (s *Store) Structure(limit int) (*StructureResult, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	repoRoot, _ := s.GetMeta("repo_root")
+	result := &StructureResult{
+		RepoRoot:  repoRoot,
+		Languages: make(map[string]int),
+	}
+
+	s.db.QueryRow("SELECT COUNT(*) FROM files").Scan(&result.Files)
+	s.db.QueryRow("SELECT COUNT(*) FROM symbols s JOIN files f ON s.file_id = f.id").Scan(&result.Symbols)
+
+	// Languages
+	langRows, err := s.db.Query("SELECT language, COUNT(*) FROM files GROUP BY language ORDER BY COUNT(*) DESC")
+	if err == nil {
+		defer langRows.Close()
+		for langRows.Next() {
+			var lang string
+			var cnt int
+			langRows.Scan(&lang, &cnt)
+			result.Languages[lang] = cnt
+		}
+	}
+
+	// Entry points: main, init, or exported top-level functions at depth 0
+	entryRows, err := s.db.Query(`
+		SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, COALESCE(s.summary, ''), s.language
+		FROM symbols s JOIN files f ON s.file_id = f.id
+		WHERE s.depth = 0 AND s.kind IN ('function', 'method')
+		  AND (s.name = 'main' OR s.name = 'init' OR s.name = 'Main' OR s.name = 'Init'
+		       OR (s.name GLOB '[A-Z]*' AND s.kind = 'function' AND f.rel_path LIKE '%main%'))
+		ORDER BY s.name LIMIT ?
+	`, limit)
+	if err == nil {
+		defer entryRows.Close()
+		for entryRows.Next() {
+			var sym SymbolResult
+			entryRows.Scan(&sym.Name, &sym.Kind, &sym.File, &sym.RelPath, &sym.StartLine, &sym.EndLine,
+				&sym.Parent, &sym.Depth, &sym.Signature, &sym.Summary, &sym.Language)
+			result.EntryPoints = append(result.EntryPoints, sym)
+		}
+	}
+
+	// Top symbols by ref count
+	refRows, err := s.db.Query(`
+		SELECT r.name, COUNT(*) as cnt,
+		       s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, COALESCE(s.summary, ''), s.language
+		FROM refs r
+		JOIN symbols s ON s.name = r.name AND s.depth = 0
+		JOIN files f ON s.file_id = f.id
+		GROUP BY r.name, f.path
+		ORDER BY cnt DESC
+		LIMIT ?
+	`, limit)
+	if err == nil {
+		defer refRows.Close()
+		for refRows.Next() {
+			var rs RankedSymbol
+			refRows.Scan(&rs.Name, &rs.Count,
+				&rs.Kind, &rs.File, &rs.RelPath, &rs.StartLine, &rs.EndLine,
+				&rs.Parent, &rs.Depth, &rs.Signature, &rs.Summary, &rs.Language)
+			result.TopByRefs = append(result.TopByRefs, rs)
+		}
+	}
+
+	// Top files by import fan-in (how many other files import this file's package/path)
+	impRows, err := s.db.Query(`
+		SELECT f.rel_path, f.language, COUNT(DISTINCT i.file_id) as cnt
+		FROM files f
+		JOIN imports i ON i.raw_path LIKE '%' || REPLACE(f.rel_path, '/', '.') || '%'
+		   OR i.raw_path LIKE '%' || REPLACE(REPLACE(f.rel_path, '/', '.'), '.go', '') || '%'
+		   OR i.raw_path LIKE '%' || REPLACE(REPLACE(f.rel_path, '/', '.'), '.py', '') || '%'
+		GROUP BY f.rel_path
+		HAVING cnt > 1
+		ORDER BY cnt DESC
+		LIMIT ?
+	`, limit)
+	if err == nil {
+		defer impRows.Close()
+		for impRows.Next() {
+			var rf RankedFile
+			impRows.Scan(&rf.RelPath, &rf.Language, &rf.Count)
+			result.TopByImportFan = append(result.TopByImportFan, rf)
+		}
+	}
+
+	// Top packages/directories by symbol count
+	pkgRows, err := s.db.Query(`
+		SELECT
+		  CASE WHEN INSTR(f.rel_path, '/') > 0
+		       THEN SUBSTR(f.rel_path, 1, INSTR(f.rel_path, '/') - 1)
+			     || CASE WHEN INSTR(SUBSTR(f.rel_path, INSTR(f.rel_path, '/') + 1), '/') > 0
+			          THEN '/' || SUBSTR(SUBSTR(f.rel_path, INSTR(f.rel_path, '/') + 1), 1, INSTR(SUBSTR(f.rel_path, INSTR(f.rel_path, '/') + 1), '/') - 1)
+			          ELSE '/' || SUBSTR(f.rel_path, INSTR(f.rel_path, '/') + 1)
+			        END
+		       ELSE '.'
+		  END as pkg,
+		  COUNT(DISTINCT s.id) as sym_count,
+		  COUNT(DISTINCT f.id) as file_count
+		FROM files f
+		JOIN symbols s ON s.file_id = f.id
+		GROUP BY pkg
+		ORDER BY sym_count DESC
+		LIMIT ?
+	`, limit)
+	if err == nil {
+		defer pkgRows.Close()
+		for pkgRows.Next() {
+			var rp RankedPackage
+			pkgRows.Scan(&rp.Path, &rp.Symbols, &rp.Files)
+			result.TopPackages = append(result.TopPackages, rp)
+		}
+	}
+
+	return result, nil
+}
+
 // SearchSymbolsCI performs a case-insensitive exact name match.
 func (s *Store) SearchSymbolsCI(name string, limit int) ([]SymbolResult, error) {
 	rows, err := s.db.Query(`

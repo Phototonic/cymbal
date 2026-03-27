@@ -55,6 +55,7 @@ cymbal ls                        # file tree
 | Command | What it does |
 |---------|-------------|
 | `investigate` | **Start here.** Kind-adaptive exploration — one call, right shape |
+| `structure` | Structural overview — entry points, hotspots, central packages |
 | `trace` | Downward call graph — what does this symbol call? |
 | `index` | Parse and index a directory |
 | `ls` | File tree, repo list, or `--stats` overview |
@@ -67,6 +68,8 @@ cymbal ls                        # file tree
 | `diff` | Git diff scoped to a symbol's line range |
 | `context` | Bundled view: source + types + callers + imports |
 
+Commands that accept symbols support **batch**: `cymbal investigate Foo Bar Baz` runs all three in one invocation.
+
 All commands support `--json` for structured output.
 
 ## Agent integration
@@ -78,7 +81,9 @@ Add this to your agent's system prompt (e.g., `CLAUDE.md`, `agent.md`, or MCP to
 ```markdown
 ## Code Exploration Policy
 Use `cymbal` CLI for code navigation — prefer it over Read, Grep, Glob, or Bash for code exploration.
-- **To understand a symbol**: `cymbal investigate <symbol>` — returns source, callers, impact, or members based on what the symbol is. Use this first.
+- **New to a repo?**: `cymbal structure` — entry points, hotspots, central packages. Start here.
+- **To understand a symbol**: `cymbal investigate <symbol>` — returns source, callers, impact, or members based on what the symbol is.
+- **To understand multiple symbols**: `cymbal investigate Foo Bar Baz` — batch mode, one invocation.
 - **To trace an execution path**: `cymbal trace <symbol>` — follows the call graph downward (what does X call, what do those call).
 - **To assess change risk**: `cymbal impact <symbol>` — follows the call graph upward (what breaks if X changes).
 - Before reading a file: `cymbal outline <file>` or `cymbal show <file:L1-L2>`

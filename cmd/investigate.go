@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/1broseidon/cymbal/internal/index"
@@ -27,112 +28,149 @@ Supports disambiguation:
 Examples:
   cymbal investigate OpenStore
   cymbal investigate SymbolResult
-  cymbal investigate config.Load`,
-	Args: cobra.ExactArgs(1),
+  cymbal investigate config.Load
+  cymbal investigate Foo Bar Baz     # batch: investigate multiple symbols`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
 		dbPath := getDBPath(cmd)
 		ensureFresh(dbPath)
 		jsonOut := getJSONFlag(cmd)
 
-		res, err := flexResolve(dbPath, name)
-		if err != nil {
-			return err
-		}
-
-		if len(res.Results) == 0 {
-			return fmt.Errorf("symbol not found: %s", name)
-		}
-
-		// Use the best match (first after ranking).
-		sym := res.Results[0]
-
-		result, err := index.InvestigateResolved(dbPath, sym)
-		if err != nil {
-			return err
-		}
-
-		if jsonOut {
-			data := map[string]any{"result": result}
-			if res.TotalFound > 1 {
-				data["matches"] = res.TotalFound
+		if jsonOut && len(args) > 1 {
+			var all []any
+			for _, name := range args {
+				data := investigateOne(dbPath, name)
+				all = append(all, data)
 			}
-			if res.Fuzzy {
-				data["fuzzy"] = true
-			}
-			return writeJSON(data)
+			return writeJSON(all)
 		}
 
-		var content strings.Builder
-
-		// Source section.
-		content.WriteString("# Source\n")
-		src := strings.TrimRight(result.Source, "\n")
-		content.WriteString(src)
-		content.WriteByte('\n')
-
-		// Members section (types).
-		if len(result.Members) > 0 {
-			fmt.Fprintf(&content, "\n# Members (%d)\n", len(result.Members))
-			for _, m := range result.Members {
-				fmt.Fprintf(&content, "  %-12s %s", m.Kind, m.Name)
-				if m.Signature != "" {
-					fmt.Fprintf(&content, " %s", m.Signature)
-				}
-				fmt.Fprintf(&content, "  %s:%d\n", m.RelPath, m.StartLine)
+		for i, name := range args {
+			if i > 0 {
+				fmt.Println()
+			}
+			if err := investigateOnePrint(dbPath, name, jsonOut); err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
 			}
 		}
-
-		// Refs section.
-		if len(result.Refs) > 0 {
-			var refs []refLine
-			for _, r := range result.Refs {
-				refs = append(refs, refLine{
-					relPath: r.RelPath,
-					line:    r.Line,
-					text:    strings.TrimSpace(readSourceLine(r.File, r.Line)),
-				})
-			}
-			lines, _ := dedupRefLines(refs)
-			label := "References"
-			if result.Kind == "function" {
-				label = "Callers"
-			}
-			fmt.Fprintf(&content, "\n# %s (%d)\n", label, len(lines))
-			for _, l := range lines {
-				content.WriteString(l)
-				content.WriteByte('\n')
-			}
-		}
-
-		// Impact section (functions only).
-		if len(result.Impact) > 0 {
-			fmt.Fprintf(&content, "\n# Impact (depth 2)\n")
-			for _, imp := range result.Impact {
-				fmt.Fprintf(&content, "  [%d] %s → %s  %s:%d\n",
-					imp.Depth, imp.Caller, imp.Symbol, imp.RelPath, imp.Line)
-			}
-		}
-
-		meta := []kv{
-			{"symbol", sym.Name},
-			{"kind", sym.Kind},
-			{"investigate", result.Kind},
-			{"file", fmt.Sprintf("%s:%d", sym.RelPath, sym.StartLine)},
-		}
-		if res.TotalFound > 1 {
-			also := make([]string, 0, len(res.Results)-1)
-			for _, r := range res.Results[1:] {
-				also = append(also, fmt.Sprintf("%s:%d", r.RelPath, r.StartLine))
-			}
-			meta = append(meta, kv{"matches", fmt.Sprintf("%d (also: %s)", res.TotalFound, strings.Join(also, ", "))})
-		}
-		if res.Fuzzy {
-			meta = append(meta, kv{"fuzzy", "true"})
-		}
-		frontmatter(meta, content.String())
 		return nil
 	},
+}
+
+func investigateOne(dbPath, name string) map[string]any {
+	res, err := flexResolve(dbPath, name)
+	if err != nil {
+		return map[string]any{"symbol": name, "error": err.Error()}
+	}
+	if len(res.Results) == 0 {
+		return map[string]any{"symbol": name, "error": "not found"}
+	}
+	sym := res.Results[0]
+	result, err := index.InvestigateResolved(dbPath, sym)
+	if err != nil {
+		return map[string]any{"symbol": name, "error": err.Error()}
+	}
+	data := map[string]any{"result": result}
+	if res.TotalFound > 1 {
+		data["matches"] = res.TotalFound
+	}
+	if res.Fuzzy {
+		data["fuzzy"] = true
+	}
+	return data
+}
+
+func investigateOnePrint(dbPath, name string, jsonOut bool) error {
+	res, err := flexResolve(dbPath, name)
+	if err != nil {
+		return err
+	}
+	if len(res.Results) == 0 {
+		return fmt.Errorf("symbol not found: %s", name)
+	}
+
+	sym := res.Results[0]
+	result, err := index.InvestigateResolved(dbPath, sym)
+	if err != nil {
+		return err
+	}
+
+	if jsonOut {
+		data := map[string]any{"result": result}
+		if res.TotalFound > 1 {
+			data["matches"] = res.TotalFound
+		}
+		if res.Fuzzy {
+			data["fuzzy"] = true
+		}
+		return writeJSON(data)
+	}
+
+	var content strings.Builder
+
+	content.WriteString("# Source\n")
+	src := strings.TrimRight(result.Source, "\n")
+	content.WriteString(src)
+	content.WriteByte('\n')
+
+	if len(result.Members) > 0 {
+		fmt.Fprintf(&content, "\n# Members (%d)\n", len(result.Members))
+		for _, m := range result.Members {
+			fmt.Fprintf(&content, "  %-12s %s", m.Kind, m.Name)
+			if m.Signature != "" {
+				fmt.Fprintf(&content, " %s", m.Signature)
+			}
+			fmt.Fprintf(&content, "  %s:%d\n", m.RelPath, m.StartLine)
+		}
+	}
+
+	if len(result.Refs) > 0 {
+		var refs []refLine
+		for _, r := range result.Refs {
+			refs = append(refs, refLine{
+				relPath: r.RelPath,
+				line:    r.Line,
+				text:    strings.TrimSpace(readSourceLine(r.File, r.Line)),
+			})
+		}
+		lines, _ := dedupRefLines(refs)
+		label := "References"
+		if result.Kind == "function" {
+			label = "Callers"
+		}
+		fmt.Fprintf(&content, "\n# %s (%d)\n", label, len(lines))
+		for _, l := range lines {
+			content.WriteString(l)
+			content.WriteByte('\n')
+		}
+	}
+
+	if len(result.Impact) > 0 {
+		fmt.Fprintf(&content, "\n# Impact (depth 2)\n")
+		for _, imp := range result.Impact {
+			fmt.Fprintf(&content, "  [%d] %s → %s  %s:%d\n",
+				imp.Depth, imp.Caller, imp.Symbol, imp.RelPath, imp.Line)
+		}
+	}
+
+	meta := []kv{
+		{"symbol", sym.Name},
+		{"kind", sym.Kind},
+		{"investigate", result.Kind},
+		{"file", fmt.Sprintf("%s:%d", sym.RelPath, sym.StartLine)},
+	}
+	if res.TotalFound > 1 {
+		also := make([]string, 0, len(res.Results)-1)
+		for _, r := range res.Results[1:] {
+			also = append(also, fmt.Sprintf("%s:%d", r.RelPath, r.StartLine))
+		}
+		meta = append(meta, kv{"matches", fmt.Sprintf("%d (also: %s)", res.TotalFound, strings.Join(also, ", "))})
+	}
+	if res.Fuzzy {
+		meta = append(meta, kv{"fuzzy", "true"})
+	}
+	frontmatter(meta, content.String())
+	return nil
 }
 
 func init() {

@@ -353,6 +353,16 @@ func Index(root, dbPath string, opts Options) (*Stats, error) {
 	return stats, nil
 }
 
+// Structure returns a structural overview of the codebase.
+func Structure(dbPath string, limit int) (*StructureResult, error) {
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer store.Close()
+	return store.Structure(limit)
+}
+
 // EnsureFresh performs a silent, incremental reindex before a query.
 // It opens the DB, reads the stored repo root, and runs the standard
 // incremental index pass (mtime+size check, parse only dirty files,

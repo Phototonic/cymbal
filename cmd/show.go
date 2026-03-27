@@ -23,19 +23,30 @@ Otherwise, it's treated as a symbol name.
 Examples:
   cymbal show ParseFile              # show symbol source
   cymbal show internal/index/store.go     # show full file
-  cymbal show internal/index/store.go:80-120  # show lines 80-120`,
-	Args: cobra.ExactArgs(1),
+  cymbal show internal/index/store.go:80-120  # show lines 80-120
+  cymbal show Foo Bar Baz                # batch: show multiple symbols`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		target := args[0]
 		dbPath := getDBPath(cmd)
 		ensureFresh(dbPath)
 		jsonOut := getJSONFlag(cmd)
 		ctx, _ := cmd.Flags().GetInt("context")
 
-		if isFilePath(target) {
-			return showFile(target, ctx, jsonOut)
+		for i, target := range args {
+			if i > 0 {
+				fmt.Println()
+			}
+			var err error
+			if isFilePath(target) {
+				err = showFile(target, ctx, jsonOut)
+			} else {
+				err = showSymbol(dbPath, target, ctx, jsonOut)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", target, err)
+			}
 		}
-		return showSymbol(dbPath, target, ctx, jsonOut)
+		return nil
 	},
 }
 

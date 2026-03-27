@@ -10,7 +10,7 @@ import (
 )
 
 var refsCmd = &cobra.Command{
-	Use:   "refs <symbol>",
+	Use:   "refs <symbol> [symbol2 ...]",
 	Short: "Find references to a symbol (best-effort)",
 	Long: `Find files and lines that reference a symbol name.
 
@@ -18,10 +18,11 @@ Default: shows call-expression references across indexed files.
 --importers: shows files that import the file defining this symbol.
 --impact: shorthand for --importers --depth 2 (transitive impact).
 
+Supports batch: cymbal refs Foo Bar Baz
+
 Note: references are best-effort based on AST name matching, not semantic analysis.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
 		dbPath := getDBPath(cmd)
 		ensureFresh(dbPath)
 		jsonOut := getJSONFlag(cmd)
@@ -38,10 +39,21 @@ Note: references are best-effort based on AST name matching, not semantic analys
 			}
 		}
 
-		if importers {
-			return refsImporters(dbPath, name, depth, limit, jsonOut)
+		for i, name := range args {
+			if i > 0 {
+				fmt.Println()
+			}
+			var err error
+			if importers {
+				err = refsImporters(dbPath, name, depth, limit, jsonOut)
+			} else {
+				err = refsSymbol(dbPath, name, limit, ctx, jsonOut)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
+			}
 		}
-		return refsSymbol(dbPath, name, limit, ctx, jsonOut)
+		return nil
 	},
 }
 
@@ -62,7 +74,7 @@ func refsSymbol(dbPath, name string, limit, ctx int, jsonOut bool) error {
 
 	if len(results) == 0 {
 		fmt.Fprintf(os.Stderr, "No references found for '%s'.\n", name)
-		os.Exit(1)
+		return nil
 	}
 
 	if jsonOut {
@@ -107,7 +119,7 @@ func refsImporters(dbPath, name string, depth, limit int, jsonOut bool) error {
 
 	if len(results) == 0 {
 		fmt.Fprintf(os.Stderr, "No importers found for '%s'.\n", name)
-		os.Exit(1)
+		return nil
 	}
 
 	if jsonOut {
