@@ -2,6 +2,18 @@
 
 All notable changes to cymbal are documented here.
 
+## [0.8.2] - 2026-04-02
+
+### Added
+
+- **Docker support** — Dockerfile, docker-compose.yml, and `CYMBAL_DB` environment variable for running cymbal from a container with no local Go/CGO setup. Index stored at `.cymbal/index.db` in the repo root. (@VertigoOne1)
+- PowerShell uninstall script (`uninstall.ps1`) with optional `-Purge` flag to remove index data. (@VertigoOne1)
+
+### Fixed
+
+- Windows binary no longer requires MinGW DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`). Release workflow now statically links the C runtime on Windows. Fixes #1.
+- Quoted `$(pwd)` in all Docker documentation examples to handle paths with spaces.
+
 ## [0.8.1] - 2026-03-27
 
 ### Fixed
