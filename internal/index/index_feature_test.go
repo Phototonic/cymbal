@@ -265,6 +265,66 @@ func UniqueOther() {}
 	}
 }
 
+func TestFindGitRootWorktree(t *testing.T) {
+	// Simulate a worktree: .git is a file containing "gitdir: <path>".
+	dir := t.TempDir()
+	worktreeDir := filepath.Join(dir, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Write a .git file (as worktrees have).
+	gitFile := filepath.Join(worktreeDir, ".git")
+	if err := os.WriteFile(gitFile, []byte("gitdir: /some/path/.git/worktrees/mybranch\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := FindGitRoot(worktreeDir)
+	if err != nil {
+		t.Fatalf("FindGitRoot should find worktree root, got error: %v", err)
+	}
+	if root != worktreeDir {
+		t.Errorf("expected %s, got %s", worktreeDir, root)
+	}
+
+	// Subdirectory of worktree should resolve to worktree root.
+	subDir := filepath.Join(worktreeDir, "pkg", "sub")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	root, err = FindGitRoot(subDir)
+	if err != nil {
+		t.Fatalf("FindGitRoot from subdirectory should work, got error: %v", err)
+	}
+	if root != worktreeDir {
+		t.Errorf("expected %s, got %s", worktreeDir, root)
+	}
+}
+
+func TestFindGitRootRegularRepo(t *testing.T) {
+	// Standard repo: .git is a directory.
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+	if err := os.MkdirAll(gitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := FindGitRoot(dir)
+	if err != nil {
+		t.Fatalf("FindGitRoot should find regular repo, got error: %v", err)
+	}
+	if root != dir {
+		t.Errorf("expected %s, got %s", dir, root)
+	}
+}
+
+func TestFindGitRootNoRepo(t *testing.T) {
+	dir := t.TempDir()
+	_, err := FindGitRoot(dir)
+	if err == nil {
+		t.Fatal("expected error for directory without .git")
+	}
+}
+
 func TestFeatureIndexRepoDBPathDeterministic(t *testing.T) {
 	path1, err := RepoDBPath("/home/user/myrepo")
 	if err != nil {

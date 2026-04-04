@@ -92,12 +92,21 @@ func RepoDBPath(repoRoot string) (string, error) {
 	return filepath.Join(base, "repos", hash, "index.db"), nil
 }
 
-// FindGitRoot walks up from dir to find the nearest .git directory.
+// FindGitRoot walks up from dir to find the nearest .git directory or
+// .git file (worktrees have a .git file containing "gitdir: <path>").
 func FindGitRoot(dir string) (string, error) {
 	d := dir
 	for {
-		if info, err := os.Stat(filepath.Join(d, ".git")); err == nil && info.IsDir() {
-			return d, nil
+		dotGit := filepath.Join(d, ".git")
+		info, err := os.Stat(dotGit)
+		if err == nil {
+			if info.IsDir() {
+				return d, nil
+			}
+			// Worktree: .git is a file containing "gitdir: <path>".
+			if !info.IsDir() && info.Mode().IsRegular() {
+				return d, nil
+			}
 		}
 		parent := filepath.Dir(d)
 		if parent == d {
@@ -369,6 +378,9 @@ func Structure(dbPath string, limit int) (*StructureResult, error) {
 // prune stale). Returns the number of files refreshed, or 0 if
 // everything was already current. Errors are intentionally swallowed —
 // a stale read is better than a failed query.
+//
+// If the DB does not exist yet, EnsureFresh auto-indexes from the
+// current working directory's git root (issue #3).
 func EnsureFresh(dbPath string) int {
 	store, err := OpenStore(dbPath)
 	if err != nil {
@@ -377,8 +389,15 @@ func EnsureFresh(dbPath string) int {
 
 	repoRoot, err := store.GetMeta("repo_root")
 	store.Close()
+
 	if err != nil || repoRoot == "" {
-		return 0
+		// No repo_root in DB — this is a fresh/empty database.
+		// Auto-index from cwd's git root.
+		repoRoot = autoDetectRoot()
+		if repoRoot == "" {
+			return 0
+		}
+		fmt.Fprintf(os.Stderr, "Building index for %s ...\n", repoRoot)
 	}
 
 	stats, err := Index(repoRoot, dbPath, Options{})
@@ -386,6 +405,23 @@ func EnsureFresh(dbPath string) int {
 		return 0
 	}
 	return stats.FilesIndexed + stats.StaleRemoved
+}
+
+// autoDetectRoot resolves the git root from cwd for auto-indexing.
+func autoDetectRoot() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	root, err := FindGitRoot(cwd)
+	if err != nil {
+		return ""
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	return abs
 }
 
 // startProgress launches a goroutine that prints indexing progress to stderr.
