@@ -53,8 +53,7 @@ func runDiff(dbPath, name, base string, stat, jsonOut bool) error {
 	}
 
 	if len(results) == 0 {
-		fmt.Fprintf(os.Stderr, "Symbol not found: %s\n", name)
-		os.Exit(1)
+		return fmt.Errorf("symbol not found: %s", name)
 	}
 
 	// Multiple matches — disambiguate.
@@ -67,9 +66,9 @@ func runDiff(dbPath, name, base string, stat, jsonOut bool) error {
 		}
 		fmt.Fprintf(os.Stderr, "Multiple matches for '%s' — be more specific:\n", name)
 		for _, r := range results {
-			fmt.Printf("  %-12s %-40s %s:%d-%d\n", r.Kind, r.Name, r.RelPath, r.StartLine, r.EndLine)
+			fmt.Fprintf(os.Stderr, "  %-12s %-40s %s:%d-%d\n", r.Kind, r.Name, r.RelPath, r.StartLine, r.EndLine)
 		}
-		os.Exit(1)
+		return fmt.Errorf("ambiguous symbol '%s' (%d matches)", name, len(results))
 	}
 
 	sym := results[0]

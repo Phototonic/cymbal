@@ -172,8 +172,7 @@ func showSymbol(dbPath, name string, ctx int, jsonOut bool) error {
 	}
 
 	if len(res.Results) == 0 {
-		fmt.Fprintf(os.Stderr, "Symbol not found: %s\n", name)
-		os.Exit(1)
+		return fmt.Errorf("symbol not found: %s", name)
 	}
 
 	// Auto-resolve: pick the best match (first after ranking).

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/1broseidon/cymbal/internal/index"
@@ -42,8 +41,7 @@ Results are ranked: exact match > prefix > fuzzy.`,
 		}
 
 		if len(results) == 0 {
-			fmt.Fprintln(os.Stderr, "No results found.")
-			os.Exit(1)
+			return fmt.Errorf("no results found for '%s'", query)
 		}
 
 		if jsonOut {
@@ -79,8 +77,7 @@ func searchText(dbPath, query, lang string, limit int, jsonOut bool) error {
 	}
 
 	if len(results) == 0 {
-		fmt.Fprintln(os.Stderr, "No results found.")
-		os.Exit(1)
+		return fmt.Errorf("no results found for '%s'", query)
 	}
 
 	if jsonOut {

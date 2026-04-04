@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/1broseidon/cymbal/internal/index"
@@ -27,8 +26,7 @@ var importersCmd = &cobra.Command{
 		}
 
 		if len(results) == 0 {
-			fmt.Fprintf(os.Stderr, "No importers found for '%s'.\n", target)
-			os.Exit(1)
+			return fmt.Errorf("no importers found for '%s'", target)
 		}
 
 		if jsonOut {

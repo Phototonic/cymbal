@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -36,10 +37,13 @@ func getDBPath(cmd *cobra.Command) string {
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: cannot determine working directory: %v\n", err)
 		return fallbackDBPath()
 	}
 	root, err := index.FindGitRoot(cwd)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: not inside a git repository — results may be empty.\n")
+		fmt.Fprintf(os.Stderr, "  Run 'cymbal index <path>' to index a specific directory.\n")
 		return fallbackDBPath()
 	}
 	abs, err := filepath.Abs(root)

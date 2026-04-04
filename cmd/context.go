@@ -43,9 +43,9 @@ Examples:
 					}
 					fmt.Fprintf(os.Stderr, "Multiple matches for '%s' — be more specific:\n", name)
 					for _, r := range ambig.Matches {
-						fmt.Printf("  %-12s %-40s %s:%d-%d\n", r.Kind, r.Name, r.RelPath, r.StartLine, r.EndLine)
+						fmt.Fprintf(os.Stderr, "  %-12s %-40s %s:%d-%d\n", r.Kind, r.Name, r.RelPath, r.StartLine, r.EndLine)
 					}
-					os.Exit(1)
+					return fmt.Errorf("ambiguous symbol '%s' (%d matches)", name, len(ambig.Matches))
 				}
 				return err
 			}

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/1broseidon/cymbal/internal/index"
@@ -32,8 +31,7 @@ var impactCmd = &cobra.Command{
 			}
 
 			if len(results) == 0 {
-				fmt.Fprintf(os.Stderr, "No callers found for '%s'.\n", name)
-				os.Exit(1)
+				return fmt.Errorf("no callers found for '%s'", name)
 			}
 
 			if jsonOut {

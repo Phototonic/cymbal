@@ -2,6 +2,20 @@
 
 All notable changes to cymbal are documented here.
 
+## [0.8.4] - 2026-04-04
+
+### Added
+
+- **Auto-index on first query** — no more manual `cymbal index .` step. The first command in a repo automatically builds the index, with a progress indicator for large repos. Subsequent queries continue to refresh incrementally. Closes #3. (@Ismael)
+- **Git worktree support** — `FindGitRoot` now detects `.git` files (used by worktrees) in addition to `.git` directories, so all commands work correctly inside `git worktree` checkouts.
+- **Intel Mac builds** — release pipeline now produces `darwin_amd64` binaries and the Homebrew formula includes Intel Mac support. Closes #4. (@alec-pinson)
+
+### Fixed
+
+- **Correct index path documentation** — README now documents the actual OS cache directory paths (`~/.cache/cymbal/` on Linux, `~/Library/Caches/cymbal/` on macOS, `%LOCALAPPDATA%\cymbal\` on Windows) instead of the stale `~/.cymbal/` reference. Closes #5. (@candiesdoodle)
+- **Proper error propagation** — commands no longer call `os.Exit(1)` on "not found" or "ambiguous" results. Errors now flow through cobra's error handling for consistent `Error:` prefixed output and proper exit codes.
+- **Non-git-repo warning** — running cymbal outside a git repository now prints a clear warning (`not inside a git repository — results may be empty`) instead of silently returning empty results.
+
 ## [0.8.3] - 2026-04-02
 
 ### Added
