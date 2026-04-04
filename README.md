@@ -46,7 +46,7 @@ No local Go toolchain or CGO setup needed — run cymbal from a pre-built contai
 docker pull ghcr.io/1broseidon/cymbal:latest
 ```
 
-Mount any repo and the SQLite index lands at `.cymbal/index.db` inside it by default:
+Mount any repo and the SQLite index lands at `/workspace/.cymbal/index.db` inside the container by default (via `CYMBAL_DB`):
 
 ```sh
 # Index a repo
@@ -107,7 +107,7 @@ cymbal context handleAuth        # bundled: source + types + callers + imports
 cymbal ls                        # file tree
 ```
 
-The SQLite index is written to `.cymbal/index.db` in the current directory and persists between runs.
+The index auto-builds on first use — no manual `cymbal index .` required. Subsequent queries auto-refresh incrementally (~2ms when nothing changed).
 
 ## Commands
 
@@ -151,7 +151,7 @@ Use `cymbal` CLI for code navigation — prefer it over Read, Grep, Glob, or Bas
 - Before searching: `cymbal search <query>` (symbols) or `cymbal search <query> --text` (grep)
 - Before exploring structure: `cymbal ls` (tree) or `cymbal ls --stats` (overview)
 - To disambiguate: `cymbal show path/to/file.go:SymbolName` or `cymbal investigate file.go:Symbol`
-- First run: `cymbal index .` to build the initial index (<1s). After that, queries auto-refresh — no manual reindexing needed.
+- The index auto-builds on first use — no manual indexing step needed. Queries auto-refresh incrementally.
 - All commands support `--json` for structured output.
 ```
 
@@ -170,8 +170,8 @@ Run all cymbal commands as: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1bro
 - Before searching: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal search <query>` (symbols) or add `--text` for grep
 - Before exploring structure: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal ls` or `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal ls --stats`
 - To disambiguate: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal investigate path/to/file.go:Symbol`
-- First run: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal index .` to build the initial index. After that, queries auto-refresh — no manual reindexing needed.
-- The SQLite index is stored at `.cymbal/index.db` in the repo root and persists between runs.
+- The index auto-builds on first use — no manual indexing step needed. Queries auto-refresh incrementally.
+- The SQLite index is stored at `.cymbal/index.db` inside the mounted repo (via `CYMBAL_DB`).
 - All commands support `--json` for structured output.
 ```
 
@@ -197,7 +197,7 @@ Adding a language requires a tree-sitter grammar and a symbol extraction query �
 
 ## How it works
 
-1. **Index** — tree-sitter parses each file into an AST. cymbal extracts symbols (functions, types, variables, imports) and references (calls, type usage) and stores them in SQLite with FTS5 full-text search. Each repo gets its own database at `~/.cymbal/repos/<hash>/index.db` by default. Override with `--db <path>` or the `CYMBAL_DB` environment variable.
+1. **Index** — tree-sitter parses each file into an AST. cymbal extracts symbols (functions, types, variables, imports) and references (calls, type usage) and stores them in SQLite with FTS5 full-text search. Each repo gets its own database under the OS cache directory (`~/.cache/cymbal/repos/<hash>/index.db` on Linux, `~/Library/Caches/cymbal/repos/` on macOS, `%LOCALAPPDATA%\cymbal\repos\` on Windows). Override with `--db <path>` or the `CYMBAL_DB` environment variable. The index auto-builds on first query — no manual `cymbal index .` required.
 
 2. **Query** — all commands read from the current repo's SQLite index. Symbol lookups, cross-references, and import graphs are SQL queries. No re-parsing needed. No cross-repo bleed.
 

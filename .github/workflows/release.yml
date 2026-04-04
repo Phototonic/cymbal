@@ -29,6 +29,9 @@ jobs:
           - runner: macos-latest
             goos: darwin
             goarch: arm64
+          - runner: macos-13
+            goos: darwin
+            goarch: amd64
           - runner: windows-latest
             goos: windows
             goarch: amd64
@@ -139,6 +142,7 @@ jobs:
           cd dist
 
           SHA_DARWIN_ARM64=$(sha256sum cymbal_${TAG}_darwin_arm64.tar.gz | cut -d' ' -f1)
+          SHA_DARWIN_X86=$(sha256sum cymbal_${TAG}_darwin_x86_64.tar.gz | cut -d' ' -f1)
           SHA_LINUX_X86=$(sha256sum cymbal_${TAG}_linux_x86_64.tar.gz | cut -d' ' -f1)
           SHA_LINUX_ARM64=$(sha256sum cymbal_${TAG}_linux_arm64.tar.gz | cut -d' ' -f1)
 
@@ -156,6 +160,9 @@ jobs:
               if Hardware::CPU.arm?
                 url "https://github.com/1broseidon/cymbal/releases/download/${TAG}/cymbal_${TAG}_darwin_arm64.tar.gz"
                 sha256 "${SHA_DARWIN_ARM64}"
+              elsif Hardware::CPU.intel?
+                url "https://github.com/1broseidon/cymbal/releases/download/${TAG}/cymbal_${TAG}_darwin_x86_64.tar.gz"
+                sha256 "${SHA_DARWIN_X86}"
               end
 
               define_method(:install) do
@@ -167,8 +174,7 @@ jobs:
               if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
                 url "https://github.com/1broseidon/cymbal/releases/download/${TAG}/cymbal_${TAG}_linux_x86_64.tar.gz"
                 sha256 "${SHA_LINUX_X86}"
-              end
-              if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
+              elsif Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
                 url "https://github.com/1broseidon/cymbal/releases/download/${TAG}/cymbal_${TAG}_linux_arm64.tar.gz"
                 sha256 "${SHA_LINUX_ARM64}"
               end
