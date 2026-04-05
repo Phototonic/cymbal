@@ -703,6 +703,144 @@ impl Circle {
 	}
 }
 
+// --- Kotlin Language Feature Tests ---
+
+func TestFeatureKotlinSymbols(t *testing.T) {
+	src := []byte(`package com.example.foo
+
+import com.fasterxml.jackson.annotation.JsonProperty
+import kotlinx.coroutines.flow.Flow
+
+@JvmInline
+value class ItemId(val value: String)
+
+enum class ItemType { NORMAL, CONTAINER }
+
+data class Item(
+  val id: ItemId,
+  val type: ItemType,
+)
+
+interface GameEngine {
+  fun start()
+  fun stop()
+}
+
+object Singleton {
+  const val VERSION = "1.0"
+  fun boot() {}
+}
+
+typealias UserId = String
+
+class GameSession(val id: String) {
+  val createdAt: Long = 0L
+  fun tick() {
+    println("tick")
+    doThing()
+  }
+
+  companion object {
+    fun create(): GameSession = GameSession("")
+  }
+}
+
+fun topLevel(a: Int): Int = a + 1
+
+val GLOBAL = 42
+`)
+	result, err := ParseSource(src, "test.kt", "kotlin", languages["kotlin"])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Value class / data class / regular class — all kind "class".
+	if findSymbolKind(result.Symbols, "ItemId", "class") == nil {
+		t.Error("expected ItemId value class")
+	}
+	if findSymbolKind(result.Symbols, "Item", "class") == nil {
+		t.Error("expected Item data class")
+	}
+	if findSymbolKind(result.Symbols, "GameSession", "class") == nil {
+		t.Error("expected GameSession class")
+	}
+
+	// Enum class.
+	if findSymbolKind(result.Symbols, "ItemType", "enum") == nil {
+		t.Error("expected ItemType enum")
+	}
+
+	// Interface.
+	if findSymbolKind(result.Symbols, "GameEngine", "interface") == nil {
+		t.Error("expected GameEngine interface")
+	}
+
+	// Object.
+	if findSymbolKind(result.Symbols, "Singleton", "object") == nil {
+		t.Error("expected Singleton object")
+	}
+
+	// typealias.
+	if findSymbolKind(result.Symbols, "UserId", "type") == nil {
+		t.Error("expected UserId type alias")
+	}
+
+	// Top-level function.
+	if findSymbolKind(result.Symbols, "topLevel", "function") == nil {
+		t.Error("expected topLevel function")
+	}
+
+	// Top-level property.
+	if findSymbolKind(result.Symbols, "GLOBAL", "variable") == nil {
+		t.Error("expected GLOBAL variable")
+	}
+
+	// const val inside object → constant.
+	if findSymbolKind(result.Symbols, "VERSION", "constant") == nil {
+		t.Error("expected VERSION constant")
+	}
+
+	// Method inside class.
+	tick := findSymbolKind(result.Symbols, "tick", "method")
+	if tick == nil {
+		t.Fatal("expected tick method")
+	}
+	if tick.Parent != "GameSession" {
+		t.Errorf("expected tick parent GameSession, got %q", tick.Parent)
+	}
+
+	// Field inside class.
+	if findSymbolKind(result.Symbols, "createdAt", "field") == nil {
+		t.Error("expected createdAt field")
+	}
+
+	// Enum member.
+	if findSymbolKind(result.Symbols, "NORMAL", "enum_member") == nil {
+		t.Error("expected NORMAL enum_member")
+	}
+
+	// Imports.
+	if findImport(result.Imports, "com.fasterxml.jackson.annotation.JsonProperty") == nil {
+		t.Error("expected JsonProperty import")
+	}
+	if findImport(result.Imports, "kotlinx.coroutines.flow.Flow") == nil {
+		t.Error("expected Flow import")
+	}
+
+	// Refs from call_expression.
+	if findRef(result.Refs, "println") == nil {
+		t.Error("expected println ref")
+	}
+	if findRef(result.Refs, "doThing") == nil {
+		t.Error("expected doThing ref")
+	}
+
+	// Signature should be captured for functions.
+	if topLevel := findSymbol(result.Symbols, "topLevel"); topLevel == nil || topLevel.Signature == "" {
+		t.Error("expected non-empty signature for topLevel function")
+	}
+}
+
 // --- Multi-language table-driven test ---
 
 func TestFeatureParseMultiLanguage(t *testing.T) {

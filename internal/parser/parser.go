@@ -180,8 +180,13 @@ func (e *symbolExtractor) extractImport(node *sitter.Node) (symbols.Import, bool
 			content := node.Content(e.src)
 			return symbols.Import{RawPath: content, Language: e.lang}, true
 		}
-	case "java", "kotlin", "scala":
+	case "java", "scala":
 		if nodeType == "import_declaration" {
+			content := node.Content(e.src)
+			return symbols.Import{RawPath: content, Language: e.lang}, true
+		}
+	case "kotlin":
+		if nodeType == "import_header" {
 			content := node.Content(e.src)
 			return symbols.Import{RawPath: content, Language: e.lang}, true
 		}
@@ -272,7 +277,7 @@ func (e *symbolExtractor) extractRef(node *sitter.Node) (symbols.Ref, bool) {
 				}
 			}
 		}
-	case "java", "kotlin", "scala":
+	case "java", "scala":
 		if nodeType == "method_invocation" {
 			nameNode := node.ChildByFieldName("name")
 			if nameNode != nil {
@@ -281,6 +286,21 @@ func (e *symbolExtractor) extractRef(node *sitter.Node) (symbols.Ref, bool) {
 					Line:     int(node.StartPoint().Row) + 1,
 					Language: e.lang,
 				}, true
+			}
+		}
+	case "kotlin":
+		if nodeType == "call_expression" {
+			// First child is the callee (simple_identifier or navigation_expression).
+			if node.ChildCount() > 0 {
+				callee := node.Child(0)
+				name := extractCallName(callee, e.src)
+				if name != "" {
+					return symbols.Ref{
+						Name:     name,
+						Line:     int(node.StartPoint().Row) + 1,
+						Language: e.lang,
+					}, true
+				}
 			}
 		}
 	case "ruby":
@@ -352,8 +372,10 @@ func (e *symbolExtractor) classifyNode(nodeType string, node *sitter.Node) (stri
 		return e.classifyJS(nodeType, node)
 	case "rust":
 		return e.classifyRust(nodeType, node)
-	case "java", "kotlin", "scala":
+	case "java", "scala":
 		return e.classifyJavaLike(nodeType, node)
+	case "kotlin":
+		return e.classifyKotlin(nodeType, node)
 	case "ruby":
 		return e.classifyRuby(nodeType, node)
 	case "c", "cpp":
@@ -550,6 +572,90 @@ func (e *symbolExtractor) classifyJavaLike(nodeType string, node *sitter.Node) (
 	return "", nil
 }
 
+// findChildByType returns the first direct child with the given type.
+func findChildByType(node *sitter.Node, typeName string) *sitter.Node {
+	for i := range int(node.ChildCount()) {
+		c := node.Child(i)
+		if c.Type() == typeName {
+			return c
+		}
+	}
+	return nil
+}
+
+// hasChildOfType reports whether node has any direct child with the given type.
+func hasChildOfType(node *sitter.Node, typeName string) bool {
+	return findChildByType(node, typeName) != nil
+}
+
+// kotlinInsideClassBody returns true if node sits inside a class_body /
+// enum_class_body (i.e. its declaration is a member of a class/object).
+func kotlinInsideClassBody(node *sitter.Node) bool {
+	p := node.Parent()
+	if p == nil {
+		return false
+	}
+	t := p.Type()
+	return t == "class_body" || t == "enum_class_body"
+}
+
+func (e *symbolExtractor) classifyKotlin(nodeType string, node *sitter.Node) (string, *sitter.Node) {
+	switch nodeType {
+	case "class_declaration":
+		// Distinguish class / interface / enum by leading keyword child.
+		kind := "class"
+		if hasChildOfType(node, "interface") {
+			kind = "interface"
+		} else if hasChildOfType(node, "enum") {
+			kind = "enum"
+		}
+		return kind, findChildByType(node, "type_identifier")
+	case "object_declaration":
+		return "object", findChildByType(node, "type_identifier")
+	case "companion_object":
+		// Named companion (`companion object Foo`) has a type_identifier; emit it.
+		// Anonymous `companion object` is skipped — members still belong to the
+		// enclosing class via the walker's parent tracking.
+		if nameNode := findChildByType(node, "type_identifier"); nameNode != nil {
+			return "object", nameNode
+		}
+		return "", nil
+	case "function_declaration":
+		kind := "function"
+		if kotlinInsideClassBody(node) {
+			kind = "method"
+		}
+		return kind, findChildByType(node, "simple_identifier")
+	case "property_declaration":
+		varDecl := findChildByType(node, "variable_declaration")
+		if varDecl == nil {
+			return "", nil
+		}
+		nameNode := findChildByType(varDecl, "simple_identifier")
+		// Determine kind: const val → constant; inside class_body → field; else variable.
+		kind := "variable"
+		if kotlinInsideClassBody(node) {
+			kind = "field"
+		}
+		// Detect `const` modifier.
+		if mods := findChildByType(node, "modifiers"); mods != nil {
+			for i := range int(mods.ChildCount()) {
+				c := mods.Child(i)
+				if c.Type() == "property_modifier" && c.Content(e.src) == "const" {
+					kind = "constant"
+					break
+				}
+			}
+		}
+		return kind, nameNode
+	case "type_alias":
+		return "type", findChildByType(node, "type_identifier")
+	case "enum_entry":
+		return "enum_member", findChildByType(node, "simple_identifier")
+	}
+	return "", nil
+}
+
 func (e *symbolExtractor) classifyRuby(nodeType string, node *sitter.Node) (string, *sitter.Node) {
 	switch nodeType {
 	case "method":
@@ -600,7 +706,11 @@ func (e *symbolExtractor) extractSignature(node *sitter.Node, kind string) strin
 		if params != nil {
 			return params.Content(e.src)
 		}
-	case "struct", "class", "interface", "trait":
+		// Kotlin grammar has no "parameters" field — look up by type.
+		if fvp := findChildByType(node, "function_value_parameters"); fvp != nil {
+			return fvp.Content(e.src)
+		}
+	case "struct", "class", "interface", "trait", "object", "enum":
 		content := node.Content(e.src)
 		for i, ch := range content {
 			if ch == '\n' || ch == '{' {

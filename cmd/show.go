@@ -171,7 +171,7 @@ const maxTypeShowLines = 60
 
 func isTypeKind(kind string) bool {
 	switch kind {
-	case "class", "struct", "type", "interface", "trait", "enum":
+	case "class", "struct", "type", "interface", "trait", "enum", "object":
 		return true
 	}
 	return false
