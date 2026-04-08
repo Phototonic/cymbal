@@ -841,6 +841,226 @@ val GLOBAL = 42
 	}
 }
 
+// --- Dart Language Feature Tests ---
+
+func TestFeatureDartSymbols(t *testing.T) {
+	src := []byte(`import 'dart:core';
+import 'package:flutter/material.dart';
+
+typedef StringCallback = void Function(String value);
+
+mixin Printable {
+  void printSelf() {
+    print(toString());
+  }
+}
+
+enum Color { red, green, blue }
+
+abstract class Shape with Printable {
+  String get name;
+  set name(String value);
+
+  double area();
+
+  Shape();
+  Shape.origin() : this();
+}
+
+class Circle extends Shape {
+  final double radius;
+
+  Circle(this.radius);
+  factory Circle.unit() => Circle(1.0);
+
+  @override
+  String get name => 'circle';
+
+  @override
+  set name(String value) {}
+
+  @override
+  double area() {
+    return 3.14159 * radius * radius;
+  }
+}
+
+extension ShapeUtils on Shape {
+  bool isLargerThan(Shape other) {
+    return area() > other.area();
+  }
+}
+
+void main() {
+  final c = Circle(5.0);
+  c.area();
+  print(c.name);
+  doSomething();
+}
+
+void doSomething() {}
+`)
+	result, err := ParseSource(src, "test.dart", "dart", languages["dart"])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Debug: print all symbols if any assertion fails.
+	debugSymbols := func() {
+		t.Helper()
+		t.Log("=== All symbols ===")
+		for _, s := range result.Symbols {
+			t.Logf("  %s (%s) parent=%q depth=%d lines=%d-%d sig=%q",
+				s.Name, s.Kind, s.Parent, s.Depth, s.StartLine, s.EndLine, s.Signature)
+		}
+		t.Log("=== All imports ===")
+		for _, imp := range result.Imports {
+			t.Logf("  %s", imp.RawPath)
+		}
+		t.Log("=== All refs ===")
+		for _, ref := range result.Refs {
+			t.Logf("  %s (line %d)", ref.Name, ref.Line)
+		}
+	}
+
+	// --- Imports ---
+	if findImport(result.Imports, "dart:core") == nil {
+		debugSymbols()
+		t.Error("expected import 'dart:core'")
+	}
+	if findImport(result.Imports, "package:flutter/material.dart") == nil {
+		debugSymbols()
+		t.Error("expected import 'package:flutter/material.dart'")
+	}
+
+	// --- Type alias ---
+	if findSymbolKind(result.Symbols, "StringCallback", "type") == nil {
+		debugSymbols()
+		t.Error("expected StringCallback type alias")
+	}
+
+	// --- Mixin ---
+	if findSymbolKind(result.Symbols, "Printable", "mixin") == nil {
+		debugSymbols()
+		t.Error("expected Printable mixin")
+	}
+
+	// --- Enum ---
+	if findSymbolKind(result.Symbols, "Color", "enum") == nil {
+		debugSymbols()
+		t.Error("expected Color enum")
+	}
+
+	// --- Abstract class ---
+	if findSymbolKind(result.Symbols, "Shape", "class") == nil {
+		debugSymbols()
+		t.Error("expected Shape class")
+	}
+
+	// --- Concrete class ---
+	if findSymbolKind(result.Symbols, "Circle", "class") == nil {
+		debugSymbols()
+		t.Error("expected Circle class")
+	}
+
+	// --- Extension ---
+	if findSymbolKind(result.Symbols, "ShapeUtils", "extension") == nil {
+		debugSymbols()
+		t.Error("expected ShapeUtils extension")
+	}
+
+	// --- Methods inside class ---
+	areaSym := findSymbolKind(result.Symbols, "area", "method")
+	if areaSym == nil {
+		debugSymbols()
+		t.Fatal("expected area method")
+	}
+
+	// --- Top-level function ---
+	if findSymbolKind(result.Symbols, "main", "function") == nil {
+		debugSymbols()
+		t.Error("expected main function")
+	}
+	if findSymbolKind(result.Symbols, "doSomething", "function") == nil {
+		debugSymbols()
+		t.Error("expected doSomething function")
+	}
+
+	// --- Getters ---
+	// The Shape class declares `String get name;` — should be a getter.
+	nameSym := findSymbolKind(result.Symbols, "name", "getter")
+	if nameSym == nil {
+		debugSymbols()
+		t.Error("expected 'name' getter")
+	}
+
+	// --- Setters ---
+	nameSetSym := findSymbolKind(result.Symbols, "name", "setter")
+	if nameSetSym == nil {
+		debugSymbols()
+		t.Error("expected 'name' setter")
+	}
+
+	// --- Constructors ---
+	// Shape() and Shape.origin() both map to constructor kind with name "Shape".
+	if findSymbolKind(result.Symbols, "Shape", "constructor") == nil {
+		debugSymbols()
+		t.Error("expected Shape constructor")
+	}
+	// Circle(this.radius) and factory Circle.unit() both map to constructor kind.
+	if findSymbolKind(result.Symbols, "Circle", "constructor") == nil {
+		debugSymbols()
+		t.Error("expected Circle constructor")
+	}
+
+	// --- Mixin members ---
+	printSelfSym := findSymbolKind(result.Symbols, "printSelf", "method")
+	if printSelfSym == nil {
+		debugSymbols()
+		t.Fatal("expected printSelf method (mixin member)")
+	}
+	if printSelfSym.Parent != "Printable" {
+		t.Errorf("expected printSelf parent 'Printable', got %q", printSelfSym.Parent)
+	}
+
+	// --- Extension members ---
+	isLargerSym := findSymbolKind(result.Symbols, "isLargerThan", "method")
+	if isLargerSym == nil {
+		debugSymbols()
+		t.Fatal("expected isLargerThan method (extension member)")
+	}
+	if isLargerSym.Parent != "ShapeUtils" {
+		t.Errorf("expected isLargerThan parent 'ShapeUtils', got %q", isLargerSym.Parent)
+	}
+
+	// --- Refs (function/method calls) ---
+	if findRef(result.Refs, "print") == nil {
+		debugSymbols()
+		t.Error("expected print ref")
+	}
+	if findRef(result.Refs, "area") == nil {
+		debugSymbols()
+		t.Error("expected area ref")
+	}
+
+	// --- Signatures ---
+	// Functions have a formal_parameter_list signature.
+	mainSym := findSymbol(result.Symbols, "main")
+	if mainSym == nil || mainSym.Signature == "" {
+		debugSymbols()
+		t.Error("expected non-empty signature for main function")
+	}
+	// Setters carry their single parameter as a signature.
+	if nameSetSym != nil && nameSetSym.Signature == "" {
+		t.Error("expected non-empty signature for name setter")
+	}
+	// Constructor with a parameter list should have a signature.
+	circleCtor := findSymbolKind(result.Symbols, "Circle", "constructor")
+	if circleCtor == nil || circleCtor.Signature == "" {
+		t.Error("expected non-empty signature for Circle constructor")
+	}
+}
+
 // --- Multi-language table-driven test ---
 
 func TestFeatureParseMultiLanguage(t *testing.T) {
