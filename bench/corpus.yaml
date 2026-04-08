@@ -70,3 +70,77 @@ repos:
         kind: class
         show_contains: "class APIRouter"
         refs_min: 1
+
+  - name: vite
+    url: https://github.com/vitejs/vite
+    ref: v6.0.0
+    language: typescript
+    symbols:
+      - name: createServer
+        file_contains: "server/index.ts"
+        kind: function
+        show_contains: "createServer("
+        refs_min: 1
+      - name: ViteDevServer
+        file_contains: "server/index.ts"
+        kind: interface
+        show_contains: "ViteDevServer"
+        refs_min: 0
+      - name: defineConfig
+        file_contains: "config.ts"
+        kind: function
+        show_contains: "defineConfig("
+        refs_min: 1
+
+  - name: ripgrep
+    url: https://github.com/BurntSushi/ripgrep
+    ref: "14.1.1"
+    language: rust
+    symbols:
+      - name: Searcher
+        file_contains: "mod.rs"
+        kind: struct
+        show_contains: "struct Searcher"
+        refs_min: 0
+      - name: SearchWorker
+        file_contains: "search.rs"
+        kind: struct
+        show_contains: "struct SearchWorker"
+        refs_min: 0
+
+  - name: guava
+    url: https://github.com/google/guava
+    ref: v33.4.8
+    language: java
+    symbols:
+      - name: ImmutableList
+        file_contains: "ImmutableList.java"
+        kind: class
+        show_contains: "class ImmutableList"
+        refs_min: 0
+      - name: Preconditions
+        file_contains: "Preconditions.java"
+        kind: class
+        show_contains: "class Preconditions"
+        refs_min: 0
+      - name: Optional
+        file_contains: "Optional.java"
+        kind: class
+        show_contains: "class Optional"
+        refs_min: 0
+
+  - name: jq
+    url: https://github.com/jqlang/jq
+    ref: jq-1.7.1
+    language: c
+    symbols:
+      - name: jv_parse
+        file_contains: "jv_parse.c"
+        kind: function
+        show_contains: "jv_parse"
+        refs_min: 0
+      - name: jq_next
+        file_contains: "execute.c"
+        kind: function
+        show_contains: "jq_next"
+        refs_min: 0

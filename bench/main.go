@@ -4,13 +4,16 @@
 //
 // Usage:
 //
-//	go run ./bench setup   — clone corpus repos into bench/.corpus/
-//	go run ./bench run     — execute benchmarks, write bench/RESULTS.md
+//	go run ./bench setup             — clone corpus repos into bench/.corpus/
+//	go run ./bench run               — execute benchmarks, write RESULTS.md + results.json
+//	go run ./bench update-baseline   — run benchmarks and save as baseline.json
+//	go run ./bench check             — run benchmarks and compare against baseline.json
 package main
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -108,6 +111,132 @@ type WorkflowResult struct {
 	CymbalBytes   int
 	BaselineCalls int
 	BaselineBytes int
+}
+
+// ── JSON output / baseline ────────────────────────────────────────
+
+type BenchReport struct {
+	Timestamp string              `json:"timestamp"`
+	Platform  string              `json:"platform"`
+	CPUs      int                 `json:"cpus"`
+	Entries   map[string]OpTiming `json:"entries"`
+	Accuracy  AccuracySummary     `json:"accuracy"`
+}
+
+type OpTiming struct {
+	MedianMs    float64 `json:"median_ms"`
+	OutputBytes int     `json:"output_bytes"`
+}
+
+type AccuracySummary struct {
+	Passed int `json:"passed"`
+	Total  int `json:"total"`
+}
+
+// Regression thresholds (ratio above baseline that triggers failure).
+// Generous to avoid flaky results — 3x for indexing (I/O-heavy), 2x for queries.
+const (
+	indexThreshold = 3.0
+	queryThreshold = 2.0
+)
+
+func entryKey(repo, tool string, op Op, symbol string) string {
+	if symbol == "" {
+		return fmt.Sprintf("%s/%s/%s", repo, tool, op)
+	}
+	return fmt.Sprintf("%s/%s/%s/%s", repo, tool, op, symbol)
+}
+
+func buildReport(results []Result, accuracy []AccuracyCheck) *BenchReport {
+	report := &BenchReport{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Platform:  fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
+		CPUs:      runtime.NumCPU(),
+		Entries:   make(map[string]OpTiming),
+	}
+	for _, r := range results {
+		key := entryKey(r.Repo, r.Tool, r.Op, r.Symbol)
+		report.Entries[key] = OpTiming{
+			MedianMs:    float64(r.Median().Microseconds()) / 1000.0,
+			OutputBytes: r.Output,
+		}
+	}
+	passed := 0
+	for _, a := range accuracy {
+		if a.Passed {
+			passed++
+		}
+	}
+	report.Accuracy = AccuracySummary{Passed: passed, Total: len(accuracy)}
+	return report
+}
+
+func writeJSON(report *BenchReport, path string) error {
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func loadBaseline(path string) (*BenchReport, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading baseline: %w (run: go run ./bench update-baseline)", err)
+	}
+	var report BenchReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return nil, fmt.Errorf("parsing baseline: %w", err)
+	}
+	return &report, nil
+}
+
+func compareResults(current, baseline *BenchReport) (bool, string) {
+	var b strings.Builder
+	allPassed := true
+
+	keys := make([]string, 0, len(baseline.Entries))
+	for k := range baseline.Entries {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	fmt.Fprintf(&b, "  %-6s | %-45s | %10s | %10s | %s\n", "STATUS", "KEY", "BASELINE", "CURRENT", "RATIO")
+	fmt.Fprintf(&b, "  %s\n", strings.Repeat("-", 90))
+
+	for _, key := range keys {
+		base := baseline.Entries[key]
+		cur, ok := current.Entries[key]
+		if !ok {
+			continue // new repos not in baseline — skip
+		}
+		if base.MedianMs == 0 {
+			continue
+		}
+
+		threshold := queryThreshold
+		if strings.Contains(key, "/index") || strings.Contains(key, "/reindex") {
+			threshold = indexThreshold
+		}
+		ratio := cur.MedianMs / base.MedianMs
+		status := "PASS"
+		if ratio > threshold {
+			status = "FAIL"
+			allPassed = false
+		}
+		fmt.Fprintf(&b, "  %-6s | %-45s | %8.1fms | %8.1fms | %.2fx\n",
+			status, key, base.MedianMs, cur.MedianMs, ratio)
+	}
+
+	// Check accuracy regression
+	if current.Accuracy.Passed < baseline.Accuracy.Passed {
+		fmt.Fprintf(&b, "  FAIL   | accuracy regression: %d/%d -> %d/%d\n",
+			baseline.Accuracy.Passed, baseline.Accuracy.Total,
+			current.Accuracy.Passed, current.Accuracy.Total)
+		allPassed = false
+	}
+
+	return allPassed, b.String()
 }
 
 // ── Tool definitions ───────────────────────────────────────────────
@@ -381,7 +510,7 @@ func findSourceFiles(dir string, n int) []string {
 		}
 		ext := filepath.Ext(path)
 		switch ext {
-		case ".go", ".py", ".js", ".ts", ".rs", ".java", ".rb":
+		case ".go", ".py", ".js", ".ts", ".rs", ".java", ".rb", ".c", ".h":
 			files = append(files, path)
 		}
 		return nil
@@ -490,7 +619,16 @@ func cmdSetup(corpus Corpus, corpusDir string) error {
 
 // ── Run command ────────────────────────────────────────────────────
 
-func cmdRun(corpus Corpus, corpusDir, cymbalBin string) error {
+type benchOutput struct {
+	results   []Result
+	available []Tool
+	accuracy  []AccuracyCheck
+	freshness []FreshnessResult
+	workflows []WorkflowResult
+	report    *BenchReport
+}
+
+func executeBench(corpus Corpus, corpusDir, cymbalBin string) (*benchOutput, error) {
 	tools := defineTools(cymbalBin)
 
 	var available []Tool
@@ -502,7 +640,7 @@ func cmdRun(corpus Corpus, corpusDir, cymbalBin string) error {
 		available = append(available, t)
 	}
 	if len(available) == 0 {
-		return fmt.Errorf("no tools available")
+		return nil, fmt.Errorf("no tools available")
 	}
 
 	var results []Result
@@ -512,7 +650,7 @@ func cmdRun(corpus Corpus, corpusDir, cymbalBin string) error {
 	for _, repo := range corpus.Repos {
 		dir := filepath.Join(corpusDir, repo.Name)
 		if _, err := os.Stat(dir); err != nil {
-			return fmt.Errorf("corpus repo %s not found — run: go run ./bench setup", repo.Name)
+			return nil, fmt.Errorf("corpus repo %s not found — run: go run ./bench setup", repo.Name)
 		}
 
 		fmt.Printf("\n== %s (%s) ==\n", repo.Name, repo.Language)
@@ -590,13 +728,37 @@ func cmdRun(corpus Corpus, corpusDir, cymbalBin string) error {
 			w.Repo, w.Symbol, w.CymbalCalls, w.CymbalBytes, w.BaselineCalls, w.BaselineBytes, savings)
 	}
 
-	// Generate report
-	report := generateReport(results, available, accuracy, freshness, workflows)
-	outPath := filepath.Join("bench", "RESULTS.md")
-	if err := os.WriteFile(outPath, []byte(report), 0o644); err != nil {
+	return &benchOutput{
+		results:   results,
+		available: available,
+		accuracy:  accuracy,
+		freshness: freshness,
+		workflows: workflows,
+		report:    buildReport(results, accuracy),
+	}, nil
+}
+
+func cmdRun(corpus Corpus, corpusDir, cymbalBin string) error {
+	out, err := executeBench(corpus, corpusDir, cymbalBin)
+	if err != nil {
 		return err
 	}
-	fmt.Printf("\nResults written to %s\n", outPath)
+
+	// Write markdown report
+	md := generateReport(out.results, out.available, out.accuracy, out.freshness, out.workflows)
+	mdPath := filepath.Join("bench", "RESULTS.md")
+	if err := os.WriteFile(mdPath, []byte(md), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("\nResults written to %s\n", mdPath)
+
+	// Write JSON report
+	jsonPath := filepath.Join("bench", "results.json")
+	if err := writeJSON(out.report, jsonPath); err != nil {
+		return err
+	}
+	fmt.Printf("JSON written to %s\n", jsonPath)
+
 	return nil
 }
 
@@ -820,7 +982,7 @@ func fmtBytes(n int) string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: go run ./bench [setup|run]\n")
+		fmt.Fprintf(os.Stderr, "Usage: go run ./bench [setup|run|check|update-baseline]\n")
 		os.Exit(1)
 	}
 
@@ -838,6 +1000,7 @@ func main() {
 	}
 
 	corpusDir := filepath.Join("bench", ".corpus")
+	baselinePath := filepath.Join("bench", "baseline.json")
 
 	cymbalBin := "cymbal"
 	if bin, err := exec.LookPath("./cymbal"); err == nil {
@@ -860,8 +1023,46 @@ func main() {
 			fmt.Fprintf(os.Stderr, "run: %v\n", err)
 			os.Exit(1)
 		}
+	case "update-baseline":
+		fmt.Println("Running benchmarks to generate baseline...")
+		fmt.Printf("Using cymbal: %s\n", cymbalBin)
+		out, err := executeBench(corpus, corpusDir, cymbalBin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bench: %v\n", err)
+			os.Exit(1)
+		}
+		if err := writeJSON(out.report, baselinePath); err != nil {
+			fmt.Fprintf(os.Stderr, "writing baseline: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("\nBaseline written to %s (%d entries)\n", baselinePath, len(out.report.Entries))
+	case "check":
+		baseline, err := loadBaseline(baselinePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Running benchmarks for regression check...")
+		fmt.Printf("Using cymbal: %s\n", cymbalBin)
+		out, err := executeBench(corpus, corpusDir, cymbalBin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bench: %v\n", err)
+			os.Exit(1)
+		}
+		passed, summary := compareResults(out.report, baseline)
+		fmt.Printf("\n=== Regression Check ===\n")
+		fmt.Printf("  Baseline: %s (%s, %d CPUs)\n", baseline.Timestamp, baseline.Platform, baseline.CPUs)
+		fmt.Printf("  Current:  %s (%s, %d CPUs)\n", out.report.Timestamp, out.report.Platform, out.report.CPUs)
+		fmt.Printf("  Thresholds: index=%.0fx, query=%.0fx\n\n", indexThreshold, queryThreshold)
+		fmt.Print(summary)
+		if passed {
+			fmt.Println("\n  Result: PASS — no regressions detected")
+		} else {
+			fmt.Println("\n  Result: FAIL — regressions detected")
+			os.Exit(1)
+		}
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\nUsage: go run ./bench [setup|run]\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\nUsage: go run ./bench [setup|run|check|update-baseline]\n", os.Args[1])
 		os.Exit(1)
 	}
 }
