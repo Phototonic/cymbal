@@ -302,7 +302,7 @@ func (e *symbolExtractor) extractRef(node *sitter.Node) (symbols.Ref, bool) {
 	nodeType := node.Type()
 
 	switch e.lang {
-	case "go", "javascript", "typescript", "rust":
+	case "go", "javascript", "typescript", "rust", "c", "cpp":
 		return e.extractRefCallExpr(nodeType, node)
 	case "python":
 		return e.extractRefPythonCall(nodeType, node)
@@ -414,10 +414,15 @@ func (e *symbolExtractor) extractRefElixir(nodeType string, node *sitter.Node) (
 
 // extractCallName gets the final identifier from a call expression function node.
 // For "foo.bar.Baz()", returns "Baz". For "Baz()", returns "Baz".
+// For C++ qualified names like "Calculator::multiply()", returns "multiply".
 func extractCallName(node *sitter.Node, src []byte) string {
 	content := node.Content(src)
 	if dot := strings.LastIndex(content, "."); dot >= 0 {
 		return content[dot+1:]
+	}
+	// C++ scope-resolution operator (e.g., Calculator::multiply, std::sort).
+	if sep := strings.LastIndex(content, "::"); sep >= 0 {
+		return content[sep+2:]
 	}
 	// Skip if it contains special characters (not a simple identifier).
 	if strings.ContainsAny(content, "()[]{}") {
