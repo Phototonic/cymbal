@@ -326,7 +326,7 @@ func (e *symbolExtractor) extractRefCallExpr(nodeType string, node *sitter.Node)
 	}
 	funcNode := node.ChildByFieldName("function")
 	if funcNode != nil {
-		name := extractCallName(funcNode, e.src)
+		name := extractCallName(funcNode, e.src, e.lang)
 		if name != "" {
 			return symbols.Ref{Name: name, Line: int(node.StartPoint().Row) + 1, Language: e.lang}, true
 		}
@@ -340,7 +340,7 @@ func (e *symbolExtractor) extractRefPythonCall(nodeType string, node *sitter.Nod
 	}
 	funcNode := node.ChildByFieldName("function")
 	if funcNode != nil {
-		name := extractCallName(funcNode, e.src)
+		name := extractCallName(funcNode, e.src, e.lang)
 		if name != "" {
 			return symbols.Ref{Name: name, Line: int(node.StartPoint().Row) + 1, Language: e.lang}, true
 		}
@@ -376,7 +376,7 @@ func (e *symbolExtractor) extractRefKotlin(nodeType string, node *sitter.Node) (
 	}
 	if node.ChildCount() > 0 {
 		callee := node.Child(0)
-		name := extractCallName(callee, e.src)
+		name := extractCallName(callee, e.src, e.lang)
 		if name != "" {
 			return symbols.Ref{Name: name, Line: int(node.StartPoint().Row) + 1, Language: e.lang}, true
 		}
@@ -414,15 +414,23 @@ func (e *symbolExtractor) extractRefElixir(nodeType string, node *sitter.Node) (
 
 // extractCallName gets the final identifier from a call expression function node.
 // For "foo.bar.Baz()", returns "Baz". For "Baz()", returns "Baz".
-// For C++ qualified names like "Calculator::multiply()", returns "multiply".
-func extractCallName(node *sitter.Node, src []byte) string {
+// C++ extras (when lang == "cpp"):
+//   - "Calculator::multiply()" -> "multiply"
+//   - "ptr->method()" -> "method"
+func extractCallName(node *sitter.Node, src []byte, lang string) string {
 	content := node.Content(src)
 	if dot := strings.LastIndex(content, "."); dot >= 0 {
 		return content[dot+1:]
 	}
-	// C++ scope-resolution operator (e.g., Calculator::multiply, std::sort).
-	if sep := strings.LastIndex(content, "::"); sep >= 0 {
-		return content[sep+2:]
+	if lang == "cpp" {
+		// C++ member access via pointer (e.g., ptr->method).
+		if arrow := strings.LastIndex(content, "->"); arrow >= 0 {
+			return content[arrow+2:]
+		}
+		// C++ scope-resolution operator (e.g., Calculator::multiply).
+		if sep := strings.LastIndex(content, "::"); sep >= 0 {
+			return content[sep+2:]
+		}
 	}
 	// Skip if it contains special characters (not a simple identifier).
 	if strings.ContainsAny(content, "()[]{}") {

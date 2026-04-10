@@ -703,6 +703,28 @@ impl Circle {
 	}
 }
 
+func TestFeatureRustScopedCallRef(t *testing.T) {
+	src := []byte(`fn helper() {}
+
+fn main() {
+    let v = 1;
+    std::mem::drop(v);
+    helper();
+}
+`)
+	result, err := ParseSource(src, "test.rs", "rust", languages["rust"])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if findRef(result.Refs, "std::mem::drop") == nil {
+		t.Fatal("expected scoped rust ref 'std::mem::drop'")
+	}
+	if findRef(result.Refs, "helper") == nil {
+		t.Fatal("expected helper ref")
+	}
+}
+
 // --- Kotlin Language Feature Tests ---
 
 func TestFeatureKotlinSymbols(t *testing.T) {
@@ -1147,7 +1169,7 @@ int main() {
 		t.Error("expected main function")
 	}
 
-	// --- Refs (call-site extraction — the new feature) ---
+	// --- Refs (call-site extraction, new feature) ---
 	addRef := findRef(result.Refs, "add")
 	if addRef == nil {
 		debugSymbols()
@@ -1192,6 +1214,7 @@ typedef unsigned long ulong;
 class Calculator {
 public:
     int add(int a, int b) { return a + b; }
+    int subtract(int a, int b) { return a - b; }
     static int multiply(int a, int b) { return a * b; }
 };
 
@@ -1203,7 +1226,9 @@ void standalone() {}
 
 int main() {
     Calculator calc;
+    Calculator* ptr = &calc;
     int sum = calc.add(1, 2);
+    int diff = ptr->subtract(9, 3);
     int product = Calculator::multiply(3, 4);
     utils::helper(sum);
     standalone();
@@ -1266,14 +1291,14 @@ int main() {
 		t.Error("expected main function")
 	}
 
-	// --- Refs (call-site extraction — the new feature) ---
+	// --- Refs (call-site extraction, new feature) ---
 	// Simple function call.
 	if findRef(result.Refs, "standalone") == nil {
 		debugSymbols()
 		t.Error("expected ref to 'standalone'")
 	}
 
-	// Method call via dot: calc.add(1, 2) → ref to "add".
+	// Method call via dot: calc.add(1, 2) should extract "add".
 	addRef := findRef(result.Refs, "add")
 	if addRef == nil {
 		debugSymbols()
@@ -1283,13 +1308,19 @@ int main() {
 		t.Error("expected non-zero line for add ref")
 	}
 
-	// Static method call via :: scope: Calculator::multiply(3, 4) → ref to "multiply".
+	// Method call via pointer: ptr->subtract(9, 3) should extract "subtract".
+	if findRef(result.Refs, "subtract") == nil {
+		debugSymbols()
+		t.Error("expected ref to 'subtract' (pointer call via ->)")
+	}
+
+	// Static method call via :: scope: Calculator::multiply(3, 4) should extract "multiply".
 	if findRef(result.Refs, "multiply") == nil {
 		debugSymbols()
 		t.Error("expected ref to 'multiply' (qualified call via ::)")
 	}
 
-	// Namespace-scoped call: utils::helper(sum) → ref to "helper".
+	// Namespace-scoped call: utils::helper(sum) should extract "helper".
 	if findRef(result.Refs, "helper") == nil {
 		debugSymbols()
 		t.Error("expected ref to 'helper' (namespace-scoped call via ::)")
