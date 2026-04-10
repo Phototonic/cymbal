@@ -418,20 +418,40 @@ func (e *symbolExtractor) extractRefElixir(nodeType string, node *sitter.Node) (
 //   - "Calculator::multiply()" -> "multiply"
 //   - "ptr->method()" -> "method"
 func extractCallName(node *sitter.Node, src []byte, lang string) string {
-	content := node.Content(src)
-	if dot := strings.LastIndex(content, "."); dot >= 0 {
-		return content[dot+1:]
-	}
-	if lang == "cpp" {
-		// C++ member access via pointer (e.g., ptr->method).
-		if arrow := strings.LastIndex(content, "->"); arrow >= 0 {
-			return content[arrow+2:]
+	content := strings.TrimSpace(node.Content(src))
+
+	if lang == "c" || lang == "cpp" {
+		// Normalize chained C/C++ qualifiers to the final callable name.
+		// Handles separators like ., ->, and :: in mixed forms.
+		for {
+			idx, step := -1, 0
+			if dot := strings.LastIndex(content, "."); dot > idx {
+				idx, step = dot, 1
+			}
+			if arrow := strings.LastIndex(content, "->"); arrow > idx {
+				idx, step = arrow, 2
+			}
+			if sep := strings.LastIndex(content, "::"); sep > idx {
+				idx, step = sep, 2
+			}
+			if idx < 0 {
+				break
+			}
+			content = content[idx+step:]
 		}
-		// C++ scope-resolution operator (e.g., Calculator::multiply).
-		if sep := strings.LastIndex(content, "::"); sep >= 0 {
-			return content[sep+2:]
+
+		// C++ template calls (e.g., std::max<int>) should resolve to max.
+		if lang == "cpp" {
+			if lt := strings.Index(content, "<"); lt > 0 && strings.HasSuffix(content, ">") {
+				content = content[:lt]
+			}
+		}
+	} else {
+		if dot := strings.LastIndex(content, "."); dot >= 0 {
+			content = content[dot+1:]
 		}
 	}
+
 	// Skip if it contains special characters (not a simple identifier).
 	if strings.ContainsAny(content, "()[]{}") {
 		return ""

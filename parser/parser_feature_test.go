@@ -1095,6 +1095,16 @@ enum Color { RED, GREEN, BLUE };
 
 typedef unsigned long ulong;
 
+typedef int (*op_t)(int);
+
+int double_it(int x) {
+    return x * 2;
+}
+
+struct FnBox {
+    op_t cb;
+};
+
 int add(int a, int b) {
     return a + b;
 }
@@ -1105,6 +1115,13 @@ int main() {
     int result = add(1, 2);
     helper(result);
     printf("result = %d\n", result);
+
+    struct FnBox box;
+    box.cb = double_it;
+    box.cb(7);
+    struct FnBox *boxPtr = &box;
+    boxPtr->cb(8);
+
     int *p = malloc(sizeof(int));
     free(p);
     return 0;
@@ -1197,12 +1214,21 @@ int main() {
 		debugSymbols()
 		t.Error("expected ref to 'free'")
 	}
+	if findRef(result.Refs, "cb") == nil {
+		debugSymbols()
+		t.Error("expected ref to 'cb' from function-pointer field calls")
+	}
+	if findRef(result.Refs, "boxPtr->cb") != nil {
+		debugSymbols()
+		t.Error("expected pointer call to normalize to 'cb', got raw 'boxPtr->cb'")
+	}
 }
 
 // --- C++ Language Feature Tests ---
 
 func TestFeatureCPPRefs(t *testing.T) {
 	src := []byte(`#include <iostream>
+#include <algorithm>
 #include <vector>
 
 struct Point { int x; int y; };
@@ -1230,6 +1256,7 @@ int main() {
     int sum = calc.add(1, 2);
     int diff = ptr->subtract(9, 3);
     int product = Calculator::multiply(3, 4);
+    int mx = std::max<int>(1, 2);
     utils::helper(sum);
     standalone();
     printf("done");
@@ -1318,6 +1345,16 @@ int main() {
 	if findRef(result.Refs, "multiply") == nil {
 		debugSymbols()
 		t.Error("expected ref to 'multiply' (qualified call via ::)")
+	}
+
+	// Template call should normalize to the base callable name.
+	if findRef(result.Refs, "max") == nil {
+		debugSymbols()
+		t.Error("expected template call ref to normalize to 'max'")
+	}
+	if findRef(result.Refs, "max<int>") != nil {
+		debugSymbols()
+		t.Error("expected no raw template ref name 'max<int>'")
 	}
 
 	// Namespace-scoped call: utils::helper(sum) should extract "helper".
