@@ -1061,6 +1061,247 @@ void doSomething() {}
 	}
 }
 
+// --- C Language Feature Tests ---
+
+func TestFeatureCRefs(t *testing.T) {
+	src := []byte(`#include <stdio.h>
+#include <stdlib.h>
+
+struct Point { int x; int y; };
+
+enum Color { RED, GREEN, BLUE };
+
+typedef unsigned long ulong;
+
+int add(int a, int b) {
+    return a + b;
+}
+
+void helper(int x) {}
+
+int main() {
+    int result = add(1, 2);
+    helper(result);
+    printf("result = %d\n", result);
+    int *p = malloc(sizeof(int));
+    free(p);
+    return 0;
+}
+`)
+	result, err := ParseSource(src, "test.c", "c", languages["c"])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Debug: print all symbols if any assertion fails.
+	debugSymbols := func() {
+		t.Helper()
+		t.Log("=== All symbols ===")
+		for _, s := range result.Symbols {
+			t.Logf("  %s (%s) parent=%q lines=%d-%d",
+				s.Name, s.Kind, s.Parent, s.StartLine, s.EndLine)
+		}
+		t.Log("=== All imports ===")
+		for _, imp := range result.Imports {
+			t.Logf("  %s", imp.RawPath)
+		}
+		t.Log("=== All refs ===")
+		for _, ref := range result.Refs {
+			t.Logf("  %s (line %d)", ref.Name, ref.Line)
+		}
+	}
+
+	// --- Imports ---
+	if findImport(result.Imports, "stdio.h") == nil {
+		debugSymbols()
+		t.Error("expected import 'stdio.h'")
+	}
+	if findImport(result.Imports, "stdlib.h") == nil {
+		debugSymbols()
+		t.Error("expected import 'stdlib.h'")
+	}
+
+	// --- Symbols (existing classifyC coverage) ---
+	if findSymbolKind(result.Symbols, "Point", "struct") == nil {
+		debugSymbols()
+		t.Error("expected Point struct")
+	}
+	if findSymbolKind(result.Symbols, "Color", "enum") == nil {
+		debugSymbols()
+		t.Error("expected Color enum")
+	}
+	if findSymbolKind(result.Symbols, "ulong", "type") == nil {
+		debugSymbols()
+		t.Error("expected ulong typedef")
+	}
+	if findSymbolKind(result.Symbols, "add", "function") == nil {
+		debugSymbols()
+		t.Error("expected add function")
+	}
+	if findSymbolKind(result.Symbols, "helper", "function") == nil {
+		debugSymbols()
+		t.Error("expected helper function")
+	}
+	if findSymbolKind(result.Symbols, "main", "function") == nil {
+		debugSymbols()
+		t.Error("expected main function")
+	}
+
+	// --- Refs (call-site extraction — the new feature) ---
+	addRef := findRef(result.Refs, "add")
+	if addRef == nil {
+		debugSymbols()
+		t.Fatal("expected ref to 'add'")
+	}
+	if addRef.Line == 0 {
+		t.Error("expected non-zero line for add ref")
+	}
+
+	helperRef := findRef(result.Refs, "helper")
+	if helperRef == nil {
+		debugSymbols()
+		t.Fatal("expected ref to 'helper'")
+	}
+
+	if findRef(result.Refs, "printf") == nil {
+		debugSymbols()
+		t.Error("expected ref to 'printf'")
+	}
+	if findRef(result.Refs, "malloc") == nil {
+		debugSymbols()
+		t.Error("expected ref to 'malloc'")
+	}
+	if findRef(result.Refs, "free") == nil {
+		debugSymbols()
+		t.Error("expected ref to 'free'")
+	}
+}
+
+// --- C++ Language Feature Tests ---
+
+func TestFeatureCPPRefs(t *testing.T) {
+	src := []byte(`#include <iostream>
+#include <vector>
+
+struct Point { int x; int y; };
+
+enum Color { RED, GREEN, BLUE };
+
+typedef unsigned long ulong;
+
+class Calculator {
+public:
+    int add(int a, int b) { return a + b; }
+    static int multiply(int a, int b) { return a * b; }
+};
+
+namespace utils {
+    void helper(int x) {}
+}
+
+void standalone() {}
+
+int main() {
+    Calculator calc;
+    int sum = calc.add(1, 2);
+    int product = Calculator::multiply(3, 4);
+    utils::helper(sum);
+    standalone();
+    printf("done");
+    return 0;
+}
+`)
+	result, err := ParseSource(src, "test.cpp", "cpp", languages["cpp"])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Debug: print all symbols if any assertion fails.
+	debugSymbols := func() {
+		t.Helper()
+		t.Log("=== All symbols ===")
+		for _, s := range result.Symbols {
+			t.Logf("  %s (%s) parent=%q lines=%d-%d",
+				s.Name, s.Kind, s.Parent, s.StartLine, s.EndLine)
+		}
+		t.Log("=== All imports ===")
+		for _, imp := range result.Imports {
+			t.Logf("  %s", imp.RawPath)
+		}
+		t.Log("=== All refs ===")
+		for _, ref := range result.Refs {
+			t.Logf("  %s (line %d)", ref.Name, ref.Line)
+		}
+	}
+
+	// --- Imports ---
+	if findImport(result.Imports, "iostream") == nil {
+		debugSymbols()
+		t.Error("expected import 'iostream'")
+	}
+	if findImport(result.Imports, "vector") == nil {
+		debugSymbols()
+		t.Error("expected import 'vector'")
+	}
+
+	// --- Symbols (existing classifyC coverage for C++) ---
+	if findSymbolKind(result.Symbols, "Point", "struct") == nil {
+		debugSymbols()
+		t.Error("expected Point struct")
+	}
+	if findSymbolKind(result.Symbols, "Color", "enum") == nil {
+		debugSymbols()
+		t.Error("expected Color enum")
+	}
+	if findSymbolKind(result.Symbols, "ulong", "type") == nil {
+		debugSymbols()
+		t.Error("expected ulong typedef")
+	}
+	if findSymbolKind(result.Symbols, "standalone", "function") == nil {
+		debugSymbols()
+		t.Error("expected standalone function")
+	}
+	if findSymbolKind(result.Symbols, "main", "function") == nil {
+		debugSymbols()
+		t.Error("expected main function")
+	}
+
+	// --- Refs (call-site extraction — the new feature) ---
+	// Simple function call.
+	if findRef(result.Refs, "standalone") == nil {
+		debugSymbols()
+		t.Error("expected ref to 'standalone'")
+	}
+
+	// Method call via dot: calc.add(1, 2) → ref to "add".
+	addRef := findRef(result.Refs, "add")
+	if addRef == nil {
+		debugSymbols()
+		t.Fatal("expected ref to 'add' (method call via dot)")
+	}
+	if addRef.Line == 0 {
+		t.Error("expected non-zero line for add ref")
+	}
+
+	// Static method call via :: scope: Calculator::multiply(3, 4) → ref to "multiply".
+	if findRef(result.Refs, "multiply") == nil {
+		debugSymbols()
+		t.Error("expected ref to 'multiply' (qualified call via ::)")
+	}
+
+	// Namespace-scoped call: utils::helper(sum) → ref to "helper".
+	if findRef(result.Refs, "helper") == nil {
+		debugSymbols()
+		t.Error("expected ref to 'helper' (namespace-scoped call via ::)")
+	}
+
+	// Plain C-style call in C++ context.
+	if findRef(result.Refs, "printf") == nil {
+		debugSymbols()
+		t.Error("expected ref to 'printf'")
+	}
+}
+
 // --- Multi-language table-driven test ---
 
 func TestFeatureParseMultiLanguage(t *testing.T) {
