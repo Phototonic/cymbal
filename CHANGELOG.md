@@ -2,6 +2,17 @@
 
 All notable changes to cymbal are documented here.
 
+## [0.9.1] - 2026-04-11
+
+### Added
+
+- **C/C++ call-site reference extraction** — `refs`, `trace`, `impact`, and `investigate` now return call-graph data for C and C++ files. Includes normalization for dot, arrow (`->`), and scope-resolution (`::`) separators, plus C++ template call stripping (`std::max<int>` → `max`) (PR #12, @Phototonic).
+
+### Changed
+
+- **Library usage guide** — added `docs/library.md` and a README section covering how to import cymbal as a Go library.
+- **Test helper dedup** — extracted shared `debugParseResult` helper from duplicated closures in C/C++ feature tests.
+
 ## [0.9.0] - 2026-04-09
 
 ### Changed

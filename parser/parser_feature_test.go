@@ -58,6 +58,23 @@ func findRef(refs []symbols.Ref, name string) *symbols.Ref {
 	return nil
 }
 
+func debugParseResult(t *testing.T, result *symbols.ParseResult) {
+	t.Helper()
+	t.Log("=== All symbols ===")
+	for _, s := range result.Symbols {
+		t.Logf("  %s (%s) parent=%q lines=%d-%d",
+			s.Name, s.Kind, s.Parent, s.StartLine, s.EndLine)
+	}
+	t.Log("=== All imports ===")
+	for _, imp := range result.Imports {
+		t.Logf("  %s", imp.RawPath)
+	}
+	t.Log("=== All refs ===")
+	for _, ref := range result.Refs {
+		t.Logf("  %s (line %d)", ref.Name, ref.Line)
+	}
+}
+
 // --- Go Language Feature Tests ---
 
 func TestFeatureGoFunctions(t *testing.T) {
@@ -928,7 +945,7 @@ void doSomething() {}
 	}
 
 	// Debug: print all symbols if any assertion fails.
-	debugSymbols := func() {
+	debug := func() {
 		t.Helper()
 		t.Log("=== All symbols ===")
 		for _, s := range result.Symbols {
@@ -947,64 +964,64 @@ void doSomething() {}
 
 	// --- Imports ---
 	if findImport(result.Imports, "dart:core") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected import 'dart:core'")
 	}
 	if findImport(result.Imports, "package:flutter/material.dart") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected import 'package:flutter/material.dart'")
 	}
 
 	// --- Type alias ---
 	if findSymbolKind(result.Symbols, "StringCallback", "type") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected StringCallback type alias")
 	}
 
 	// --- Mixin ---
 	if findSymbolKind(result.Symbols, "Printable", "mixin") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected Printable mixin")
 	}
 
 	// --- Enum ---
 	if findSymbolKind(result.Symbols, "Color", "enum") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected Color enum")
 	}
 
 	// --- Abstract class ---
 	if findSymbolKind(result.Symbols, "Shape", "class") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected Shape class")
 	}
 
 	// --- Concrete class ---
 	if findSymbolKind(result.Symbols, "Circle", "class") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected Circle class")
 	}
 
 	// --- Extension ---
 	if findSymbolKind(result.Symbols, "ShapeUtils", "extension") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ShapeUtils extension")
 	}
 
 	// --- Methods inside class ---
 	areaSym := findSymbolKind(result.Symbols, "area", "method")
 	if areaSym == nil {
-		debugSymbols()
+		debug()
 		t.Fatal("expected area method")
 	}
 
 	// --- Top-level function ---
 	if findSymbolKind(result.Symbols, "main", "function") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected main function")
 	}
 	if findSymbolKind(result.Symbols, "doSomething", "function") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected doSomething function")
 	}
 
@@ -1012,33 +1029,33 @@ void doSomething() {}
 	// The Shape class declares `String get name;` — should be a getter.
 	nameSym := findSymbolKind(result.Symbols, "name", "getter")
 	if nameSym == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected 'name' getter")
 	}
 
 	// --- Setters ---
 	nameSetSym := findSymbolKind(result.Symbols, "name", "setter")
 	if nameSetSym == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected 'name' setter")
 	}
 
 	// --- Constructors ---
 	// Shape() and Shape.origin() both map to constructor kind with name "Shape".
 	if findSymbolKind(result.Symbols, "Shape", "constructor") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected Shape constructor")
 	}
 	// Circle(this.radius) and factory Circle.unit() both map to constructor kind.
 	if findSymbolKind(result.Symbols, "Circle", "constructor") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected Circle constructor")
 	}
 
 	// --- Mixin members ---
 	printSelfSym := findSymbolKind(result.Symbols, "printSelf", "method")
 	if printSelfSym == nil {
-		debugSymbols()
+		debug()
 		t.Fatal("expected printSelf method (mixin member)")
 	}
 	if printSelfSym.Parent != "Printable" {
@@ -1048,7 +1065,7 @@ void doSomething() {}
 	// --- Extension members ---
 	isLargerSym := findSymbolKind(result.Symbols, "isLargerThan", "method")
 	if isLargerSym == nil {
-		debugSymbols()
+		debug()
 		t.Fatal("expected isLargerThan method (extension member)")
 	}
 	if isLargerSym.Parent != "ShapeUtils" {
@@ -1057,11 +1074,11 @@ void doSomething() {}
 
 	// --- Refs (function/method calls) ---
 	if findRef(result.Refs, "print") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected print ref")
 	}
 	if findRef(result.Refs, "area") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected area ref")
 	}
 
@@ -1069,7 +1086,7 @@ void doSomething() {}
 	// Functions have a formal_parameter_list signature.
 	mainSym := findSymbol(result.Symbols, "main")
 	if mainSym == nil || mainSym.Signature == "" {
-		debugSymbols()
+		debug()
 		t.Error("expected non-empty signature for main function")
 	}
 	// Setters carry their single parameter as a signature.
@@ -1132,64 +1149,48 @@ int main() {
 		t.Fatal(err)
 	}
 
-	// Debug: print all symbols if any assertion fails.
-	debugSymbols := func() {
-		t.Helper()
-		t.Log("=== All symbols ===")
-		for _, s := range result.Symbols {
-			t.Logf("  %s (%s) parent=%q lines=%d-%d",
-				s.Name, s.Kind, s.Parent, s.StartLine, s.EndLine)
-		}
-		t.Log("=== All imports ===")
-		for _, imp := range result.Imports {
-			t.Logf("  %s", imp.RawPath)
-		}
-		t.Log("=== All refs ===")
-		for _, ref := range result.Refs {
-			t.Logf("  %s (line %d)", ref.Name, ref.Line)
-		}
-	}
+	debug := func() { debugParseResult(t, result) }
 
 	// --- Imports ---
 	if findImport(result.Imports, "stdio.h") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected import 'stdio.h'")
 	}
 	if findImport(result.Imports, "stdlib.h") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected import 'stdlib.h'")
 	}
 
 	// --- Symbols (existing classifyC coverage) ---
 	if findSymbolKind(result.Symbols, "Point", "struct") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected Point struct")
 	}
 	if findSymbolKind(result.Symbols, "Color", "enum") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected Color enum")
 	}
 	if findSymbolKind(result.Symbols, "ulong", "type") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ulong typedef")
 	}
 	if findSymbolKind(result.Symbols, "add", "function") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected add function")
 	}
 	if findSymbolKind(result.Symbols, "helper", "function") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected helper function")
 	}
 	if findSymbolKind(result.Symbols, "main", "function") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected main function")
 	}
 
 	// --- Refs (call-site extraction, new feature) ---
 	addRef := findRef(result.Refs, "add")
 	if addRef == nil {
-		debugSymbols()
+		debug()
 		t.Fatal("expected ref to 'add'")
 	}
 	if addRef.Line == 0 {
@@ -1198,28 +1199,28 @@ int main() {
 
 	helperRef := findRef(result.Refs, "helper")
 	if helperRef == nil {
-		debugSymbols()
+		debug()
 		t.Fatal("expected ref to 'helper'")
 	}
 
 	if findRef(result.Refs, "printf") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ref to 'printf'")
 	}
 	if findRef(result.Refs, "malloc") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ref to 'malloc'")
 	}
 	if findRef(result.Refs, "free") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ref to 'free'")
 	}
 	if findRef(result.Refs, "cb") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ref to 'cb' from function-pointer field calls")
 	}
 	if findRef(result.Refs, "boxPtr->cb") != nil {
-		debugSymbols()
+		debug()
 		t.Error("expected pointer call to normalize to 'cb', got raw 'boxPtr->cb'")
 	}
 }
@@ -1268,67 +1269,51 @@ int main() {
 		t.Fatal(err)
 	}
 
-	// Debug: print all symbols if any assertion fails.
-	debugSymbols := func() {
-		t.Helper()
-		t.Log("=== All symbols ===")
-		for _, s := range result.Symbols {
-			t.Logf("  %s (%s) parent=%q lines=%d-%d",
-				s.Name, s.Kind, s.Parent, s.StartLine, s.EndLine)
-		}
-		t.Log("=== All imports ===")
-		for _, imp := range result.Imports {
-			t.Logf("  %s", imp.RawPath)
-		}
-		t.Log("=== All refs ===")
-		for _, ref := range result.Refs {
-			t.Logf("  %s (line %d)", ref.Name, ref.Line)
-		}
-	}
+	debug := func() { debugParseResult(t, result) }
 
 	// --- Imports ---
 	if findImport(result.Imports, "iostream") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected import 'iostream'")
 	}
 	if findImport(result.Imports, "vector") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected import 'vector'")
 	}
 
 	// --- Symbols (existing classifyC coverage for C++) ---
 	if findSymbolKind(result.Symbols, "Point", "struct") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected Point struct")
 	}
 	if findSymbolKind(result.Symbols, "Color", "enum") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected Color enum")
 	}
 	if findSymbolKind(result.Symbols, "ulong", "type") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ulong typedef")
 	}
 	if findSymbolKind(result.Symbols, "standalone", "function") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected standalone function")
 	}
 	if findSymbolKind(result.Symbols, "main", "function") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected main function")
 	}
 
 	// --- Refs (call-site extraction, new feature) ---
 	// Simple function call.
 	if findRef(result.Refs, "standalone") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ref to 'standalone'")
 	}
 
 	// Method call via dot: calc.add(1, 2) should extract "add".
 	addRef := findRef(result.Refs, "add")
 	if addRef == nil {
-		debugSymbols()
+		debug()
 		t.Fatal("expected ref to 'add' (method call via dot)")
 	}
 	if addRef.Line == 0 {
@@ -1337,35 +1322,35 @@ int main() {
 
 	// Method call via pointer: ptr->subtract(9, 3) should extract "subtract".
 	if findRef(result.Refs, "subtract") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ref to 'subtract' (pointer call via ->)")
 	}
 
 	// Static method call via :: scope: Calculator::multiply(3, 4) should extract "multiply".
 	if findRef(result.Refs, "multiply") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ref to 'multiply' (qualified call via ::)")
 	}
 
 	// Template call should normalize to the base callable name.
 	if findRef(result.Refs, "max") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected template call ref to normalize to 'max'")
 	}
 	if findRef(result.Refs, "max<int>") != nil {
-		debugSymbols()
+		debug()
 		t.Error("expected no raw template ref name 'max<int>'")
 	}
 
 	// Namespace-scoped call: utils::helper(sum) should extract "helper".
 	if findRef(result.Refs, "helper") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ref to 'helper' (namespace-scoped call via ::)")
 	}
 
 	// Plain C-style call in C++ context.
 	if findRef(result.Refs, "printf") == nil {
-		debugSymbols()
+		debug()
 		t.Error("expected ref to 'printf'")
 	}
 }
