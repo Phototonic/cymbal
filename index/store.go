@@ -1418,9 +1418,11 @@ func (s *Store) FindDeadSymbols(q DeadSymbolQuery) ([]DeadSymbol, error) {
 
 	// Refs are primarily call-site based. Variable/constant refs are not
 	// comprehensively tracked and create very noisy false positives by default.
-	// Users can still request them explicitly with --kind.
+	// Type-like symbols are also noisy because many parsers do not currently
+	// emit comprehensive type-usage refs. Users can still request these kinds
+	// explicitly with --kind.
 	if q.Kind == "" {
-		sqlQuery += " AND s.kind NOT IN ('variable','constant')"
+		sqlQuery += " AND s.kind NOT IN ('variable','constant','struct','class','interface','type','enum','object','trait','mixin','extension')"
 	}
 
 	if q.Kind != "" {
@@ -1597,6 +1599,9 @@ func classifyDeadConfidence(name, kind, language, parent string) (confidence, re
 	if kind == "variable" || kind == "constant" {
 		return "low", "variable/constant refs are not fully tracked by call-site extraction"
 	}
+	if isTypeLikeKind(kind) {
+		return "low", "type usage refs are not fully tracked; result may be false positive"
+	}
 
 	// Python parser can emit class methods as kind="function" with non-empty parent.
 	// Avoid treating all nested symbols in all languages as methods.
@@ -1726,6 +1731,15 @@ func normalizeMinConfidence(minConfidence string) (string, error) {
 		return v, nil
 	default:
 		return "", fmt.Errorf("invalid MinConfidence %q: must be high, medium, or low", minConfidence)
+	}
+}
+
+func isTypeLikeKind(kind string) bool {
+	switch kind {
+	case "struct", "class", "interface", "type", "enum", "object", "trait", "mixin", "extension":
+		return true
+	default:
+		return false
 	}
 }
 
