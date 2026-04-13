@@ -107,7 +107,7 @@ cymbal outline internal/auth/handler.go  # file structure
 cymbal refs handleAuth           # who calls this?
 cymbal importers internal/auth   # who imports this package?
 cymbal impact handleAuth         # what breaks if I change this?
-cymbal dead                      # find unreferenced symbols (potential dead code)
+cymbal dead                      # low-noise dead code candidates (use --kind for deeper audits)
 cymbal diff handleAuth main      # git diff scoped to a function
 cymbal context handleAuth        # bundled: source + types + callers + imports
 cymbal ls                        # file tree
@@ -130,13 +130,31 @@ The index auto-builds on first use — no manual `cymbal index .` required. Subs
 | `refs` | Find references / call sites. `--file` to scope by path |
 | `importers` | Reverse import lookup — who imports this? |
 | `impact` | Transitive callers — what's affected by a change? |
-| `dead` | Find potentially dead symbols — defined but never referenced |
+| `dead` | Find low-noise dead code candidates with confidence levels |
 | `diff` | Git diff scoped to a symbol's line range |
 | `context` | Bundled view: source + types + callers + imports |
 
 Commands that accept symbols support **batch**: `cymbal investigate Foo Bar Baz` runs all three in one invocation.
 
 All commands support `--json` for structured output.
+
+### Dead code confidence and filtering
+
+`cymbal dead` is conservative by default to reduce false positives for agents.
+
+- **Default mode** focuses on lower-noise symbol kinds.
+- **Use `--kind`** for targeted audits of noisier kinds.
+- **Use `--min-confidence`** to control strictness:
+  - `high` — strongest signal (best for automation)
+  - `medium` — balanced signal/noise for review
+  - `low` — broadest results, includes uncertain candidates
+
+By default, `dead` excludes high-noise kinds that are currently harder to validate reliably from refs alone (for example variables/constants and type-like symbols). You can still audit them explicitly:
+
+```sh
+cymbal dead --kind variable --min-confidence low
+cymbal dead --kind struct --min-confidence low
+```
 
 ## Agent integration
 
@@ -154,7 +172,7 @@ Use `cymbal` CLI for code navigation — prefer it over Read, Grep, Glob, or Bas
 - **To understand multiple symbols**: `cymbal investigate Foo Bar Baz` — batch mode, one invocation.
 - **To trace an execution path**: `cymbal trace <symbol>` — follows the call graph downward (what does X call, what do those call).
 - **To assess change risk**: `cymbal impact <symbol>` — follows the call graph upward (what breaks if X changes).
-- **To find dead code**: `cymbal dead` — symbols defined but never referenced, with confidence levels. Filter with `--kind`, `--lang`, `--min-confidence`.
+- **To find dead code**: `cymbal dead --min-confidence medium` — low-noise dead code candidates with confidence levels. Use `--kind` for targeted deep audits.
 - Before reading a file: `cymbal outline <file>` or `cymbal show <file:L1-L2>`
 - Before searching: `cymbal search <query>` (symbols) or `cymbal search <query> --text` (grep, delegates to rg when available)
 - To filter results: `cymbal search --path 'src/*' --exclude '*_test.go' <query>`
@@ -176,7 +194,7 @@ Run all cymbal commands as: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1bro
 - **To understand multiple symbols**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal investigate Foo Bar Baz` — batch mode, one invocation.
 - **To trace an execution path**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal trace <symbol>` — follows the call graph downward (what does X call, what do those call).
 - **To assess change risk**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal impact <symbol>` — follows the call graph upward (what breaks if X changes).
-- **To find dead code**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal dead` — symbols defined but never referenced, with confidence levels. Filter with `--kind`, `--lang`, `--min-confidence`.
+- **To find dead code**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal dead --min-confidence medium` — low-noise dead code candidates with confidence levels. Use `--kind` for targeted deep audits.
 - Before reading a file: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal outline <file>` or `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal show <file:L1-L2>`
 - Before searching: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal search <query>` (symbols) or add `--text` for grep
 - Before exploring structure: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal ls` or `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal ls --stats`
