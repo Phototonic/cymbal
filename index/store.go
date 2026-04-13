@@ -1454,12 +1454,18 @@ func (s *Store) FindDeadSymbols(q DeadSymbolQuery) ([]DeadSymbol, error) {
 			continue
 		}
 
+		// Always exclude: constructor-named methods that slip through the kind filter
+		// (JS/TS have kind="method" name="constructor"; Ruby has name="initialize").
+		if isConstructorName(sym.Name) {
+			continue
+		}
+
 		// Exclude test functions by default.
 		if !q.IncludeTests && isTestSymbol(sym.Name, sym.Language, sym.RelPath) {
 			continue
 		}
 
-		confidence, reason := classifyDeadConfidence(sym.Name, sym.Kind, sym.Language, sym.RelPath)
+		confidence, reason := classifyDeadConfidence(sym.Name, sym.Kind, sym.Language, sym.RelPath, sym.Parent)
 
 		// Filter by minimum confidence.
 		if !meetsMinConfidence(confidence, q.MinConfidence) {
@@ -1504,6 +1510,18 @@ func isDunderMethod(name string) bool {
 	return len(name) > 4 && strings.HasPrefix(name, "__") && strings.HasSuffix(name, "__")
 }
 
+// isConstructorName returns true for method names that are constructors by convention
+// in languages where the parser reports them as kind="method" rather than kind="constructor".
+func isConstructorName(name string) bool {
+	switch name {
+	case "constructor", // JS/TS class constructors
+		"initialize",  // Ruby constructors
+		"__construct": // PHP constructors
+		return true
+	}
+	return false
+}
+
 // isTestSymbol detects test functions/methods by name and file path patterns.
 func isTestSymbol(name, lang, relPath string) bool {
 	// Language-specific name patterns.
@@ -1537,7 +1555,8 @@ func isTestSymbol(name, lang, relPath string) bool {
 		strings.Contains(relPathLower, "/tests/") || strings.Contains(relPathLower, "/test/") ||
 		strings.Contains(relPathLower, ".test.") || strings.Contains(relPathLower, ".spec.") ||
 		strings.Contains(relPathLower, "__tests__/") || strings.Contains(relPathLower, "\\test\\") ||
-		strings.Contains(relPathLower, "\\tests\\") || strings.Contains(relPathLower, "_test\\") {
+		strings.Contains(relPathLower, "\\tests\\") || strings.Contains(relPathLower, "_test\\") ||
+		strings.HasPrefix(relPathLower, "test_") || strings.Contains(relPathLower, "\\test_") {
 		return true
 	}
 
@@ -1551,8 +1570,10 @@ func isTestSymbol(name, lang, relPath string) bool {
 //   - "high":   very likely truly dead — private/unexported, no refs, not a special method
 //   - "medium": probably dead — exported/public or visibility unknown, no refs
 //   - "low":    uncertain — methods (could implement interfaces), or dynamic-dispatch languages
-func classifyDeadConfidence(name, kind, language, relPath string) (confidence, reason string) {
-	isMethod := kind == "method"
+func classifyDeadConfidence(name, kind, language, relPath, parent string) (confidence, reason string) {
+	// A symbol is a method if its kind is "method" OR it has a parent
+	// (some parsers classify class methods as kind="function" with a non-empty parent).
+	isMethod := kind == "method" || parent != ""
 
 	switch language {
 	case "go":
