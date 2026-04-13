@@ -867,6 +867,134 @@ func TestFeatureStoreDeadSymbolsJSTestFileExclusion(t *testing.T) {
 	}
 }
 
+func TestFeatureStoreDeadSymbolsConstructorNameLanguageAware(t *testing.T) {
+	store, _ := newTestStore(t)
+	now := time.Now()
+
+	goFile, err := store.UpsertFile("/repo/main.go", "main.go", "go", "hash1", now, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertSymbols(goFile, []symbols.Symbol{
+		{Name: "initialize", Kind: "function", File: "/repo/main.go", StartLine: 1, EndLine: 10, Language: "go"},
+		{Name: "constructor", Kind: "function", File: "/repo/main.go", StartLine: 12, EndLine: 20, Language: "go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	jsFile, err := store.UpsertFile("/repo/app.js", "app.js", "javascript", "hash2", now, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertSymbols(jsFile, []symbols.Symbol{
+		{Name: "constructor", Kind: "method", Parent: "Widget", File: "/repo/app.js", StartLine: 1, EndLine: 10, Language: "javascript"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rubyFile, err := store.UpsertFile("/repo/app.rb", "app.rb", "ruby", "hash3", now, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertSymbols(rubyFile, []symbols.Symbol{
+		{Name: "initialize", Kind: "method", Parent: "Widget", File: "/repo/app.rb", StartLine: 1, EndLine: 10, Language: "ruby"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := store.FindDeadSymbols(DeadSymbolQuery{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundGoInitialize := false
+	foundGoConstructor := false
+	for _, r := range results {
+		switch {
+		case r.Language == "go" && r.Name == "initialize":
+			foundGoInitialize = true
+		case r.Language == "go" && r.Name == "constructor":
+			foundGoConstructor = true
+		case r.Language == "javascript" && r.Name == "constructor":
+			t.Error("JS method constructor should be excluded")
+		case r.Language == "ruby" && r.Name == "initialize":
+			t.Error("Ruby method initialize should be excluded")
+		}
+	}
+
+	if !foundGoInitialize {
+		t.Error("Go function named initialize should not be excluded")
+	}
+	if !foundGoConstructor {
+		t.Error("Go function named constructor should not be excluded")
+	}
+}
+
+func TestFeatureStoreDeadSymbolsParentNotAlwaysMethod(t *testing.T) {
+	store, _ := newTestStore(t)
+	now := time.Now()
+
+	fid, err := store.UpsertFile("/repo/main.go", "main.go", "go", "hash1", now, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertSymbols(fid, []symbols.Symbol{
+		// Simulate a parser that emitted a nested function with parent metadata.
+		{Name: "nestedHelper", Kind: "function", Parent: "outerFunc", File: "/repo/main.go", StartLine: 1, EndLine: 10, Language: "go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := store.FindDeadSymbols(DeadSymbolQuery{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, r := range results {
+		if r.Name == "nestedHelper" {
+			if r.Confidence != "high" {
+				t.Fatalf("expected nested Go function to remain function-classified (high), got %q", r.Confidence)
+			}
+			return
+		}
+	}
+	t.Fatal("expected nestedHelper in dead symbols")
+}
+
+func TestFeatureStoreDeadSymbolsInvalidMinConfidence(t *testing.T) {
+	store, _ := newTestStore(t)
+
+	_, err := store.FindDeadSymbols(DeadSymbolQuery{MinConfidence: "bogus", Limit: 10})
+	if err == nil {
+		t.Fatal("expected error for invalid min confidence")
+	}
+}
+
+func TestFeatureStoreDeadSymbolsMinConfidenceNormalized(t *testing.T) {
+	store, _ := newTestStore(t)
+	now := time.Now()
+
+	fid, err := store.UpsertFile("/repo/main.go", "main.go", "go", "hash1", now, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertSymbols(fid, []symbols.Symbol{
+		{Name: "helperFunc", Kind: "function", File: "/repo/main.go", StartLine: 1, EndLine: 10, Language: "go"},
+		{Name: "ExportedFunc", Kind: "function", File: "/repo/main.go", StartLine: 12, EndLine: 20, Language: "go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := store.FindDeadSymbols(DeadSymbolQuery{MinConfidence: " HIGH ", Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(results) != 1 || results[0].Name != "helperFunc" {
+		t.Fatalf("expected only helperFunc with normalized HIGH filter, got %+v", results)
+	}
+}
+
 func TestFeatureStoreChildSymbolsFileScoped(t *testing.T) {
 	store, _ := newTestStore(t)
 	now := time.Now()

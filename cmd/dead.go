@@ -38,6 +38,7 @@ By default, test functions and entry points (main, init) are excluded.`,
 		limit, _ := cmd.Flags().GetInt("limit")
 		minConf, _ := cmd.Flags().GetString("min-confidence")
 		includeTests, _ := cmd.Flags().GetBool("include-tests")
+		minConf = strings.ToLower(strings.TrimSpace(minConf))
 
 		// Validate min-confidence flag.
 		switch minConf {
@@ -80,8 +81,8 @@ By default, test functions and entry points (main, init) are excluded.`,
 
 		var content strings.Builder
 		for _, r := range results {
-			fmt.Fprintf(&content, "  [%s]  %-10s  %-30s  %s:%d\n",
-				confTag(r.Confidence), r.Kind, r.Name, r.RelPath, r.StartLine)
+			fmt.Fprintf(&content, "  [%s]  %-10s  %-30s  %s:%d\n      reason: %s\n",
+				confTag(r.Confidence), r.Kind, r.Name, r.RelPath, r.StartLine, r.Reason)
 		}
 
 		meta := []kv{

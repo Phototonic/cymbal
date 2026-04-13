@@ -1398,6 +1398,12 @@ func (s *Store) FindDeadSymbols(q DeadSymbolQuery) ([]DeadSymbol, error) {
 		q.Limit = 50
 	}
 
+	minConfidence, err := normalizeMinConfidence(q.MinConfidence)
+	if err != nil {
+		return nil, err
+	}
+	q.MinConfidence = minConfidence
+
 	// Build SQL query — fetch unreferenced symbols, excluding kinds that are
 	// inherently not useful to report (fields, constructors, etc.).
 	sqlQuery := `
@@ -1427,23 +1433,15 @@ func (s *Store) FindDeadSymbols(q DeadSymbolQuery) ([]DeadSymbol, error) {
 	}
 	defer rows.Close()
 
-	// Collect raw candidates — we'll apply Go-side filtering and confidence next.
-	var candidates []SymbolResult
+	// Stream candidates and apply post-processing filters/confidence incrementally
+	// to avoid holding all unreferenced symbols in memory for large repositories.
+	var results []DeadSymbol
 	for rows.Next() {
-		var r SymbolResult
-		if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine,
-			&r.Parent, &r.Depth, &r.Signature, &r.Language); err != nil {
+		var sym SymbolResult
+		if err := rows.Scan(&sym.Name, &sym.Kind, &sym.File, &sym.RelPath, &sym.StartLine, &sym.EndLine,
+			&sym.Parent, &sym.Depth, &sym.Signature, &sym.Language); err != nil {
 			return nil, err
 		}
-		candidates = append(candidates, r)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	// Post-process: filter and assign confidence.
-	var results []DeadSymbol
-	for _, sym := range candidates {
 		// Always exclude: entry points.
 		if isEntryPoint(sym.Name, sym.Language) {
 			continue
@@ -1456,7 +1454,7 @@ func (s *Store) FindDeadSymbols(q DeadSymbolQuery) ([]DeadSymbol, error) {
 
 		// Always exclude: constructor-named methods that slip through the kind filter
 		// (JS/TS have kind="method" name="constructor"; Ruby has name="initialize").
-		if isConstructorName(sym.Name) {
+		if isConstructorSymbol(sym) {
 			continue
 		}
 
@@ -1465,7 +1463,7 @@ func (s *Store) FindDeadSymbols(q DeadSymbolQuery) ([]DeadSymbol, error) {
 			continue
 		}
 
-		confidence, reason := classifyDeadConfidence(sym.Name, sym.Kind, sym.Language, sym.RelPath, sym.Parent)
+		confidence, reason := classifyDeadConfidence(sym.Name, sym.Kind, sym.Language, sym.Parent)
 
 		// Filter by minimum confidence.
 		if !meetsMinConfidence(confidence, q.MinConfidence) {
@@ -1481,6 +1479,10 @@ func (s *Store) FindDeadSymbols(q DeadSymbolQuery) ([]DeadSymbol, error) {
 		if len(results) >= q.Limit {
 			break
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return results, nil
@@ -1510,16 +1512,23 @@ func isDunderMethod(name string) bool {
 	return len(name) > 4 && strings.HasPrefix(name, "__") && strings.HasSuffix(name, "__")
 }
 
-// isConstructorName returns true for method names that are constructors by convention
-// in languages where the parser reports them as kind="method" rather than kind="constructor".
-func isConstructorName(name string) bool {
-	switch name {
-	case "constructor", // JS/TS class constructors
-		"initialize",  // Ruby constructors
-		"__construct": // PHP constructors
-		return true
+// isConstructorSymbol returns true for symbols that are constructors by
+// convention in languages where constructors may be emitted as kind="method".
+func isConstructorSymbol(sym SymbolResult) bool {
+	if sym.Kind != "method" {
+		return false
 	}
-	return false
+
+	switch sym.Language {
+	case "javascript", "typescript":
+		return sym.Name == "constructor"
+	case "ruby":
+		return sym.Name == "initialize"
+	case "php":
+		return sym.Name == "__construct"
+	default:
+		return false
+	}
 }
 
 // isTestSymbol detects test functions/methods by name and file path patterns.
@@ -1570,10 +1579,10 @@ func isTestSymbol(name, lang, relPath string) bool {
 //   - "high":   very likely truly dead — private/unexported, no refs, not a special method
 //   - "medium": probably dead — exported/public or visibility unknown, no refs
 //   - "low":    uncertain — methods (could implement interfaces), or dynamic-dispatch languages
-func classifyDeadConfidence(name, kind, language, relPath, parent string) (confidence, reason string) {
-	// A symbol is a method if its kind is "method" OR it has a parent
-	// (some parsers classify class methods as kind="function" with a non-empty parent).
-	isMethod := kind == "method" || parent != ""
+func classifyDeadConfidence(name, kind, language, parent string) (confidence, reason string) {
+	// Python parser can emit class methods as kind="function" with non-empty parent.
+	// Avoid treating all nested symbols in all languages as methods.
+	isMethod := kind == "method" || (language == "python" && parent != "")
 
 	switch language {
 	case "go":
@@ -1690,6 +1699,16 @@ func meetsMinConfidence(confidence, minConfidence string) bool {
 	}
 	rank := map[string]int{"low": 0, "medium": 1, "high": 2}
 	return rank[confidence] >= rank[minConfidence]
+}
+
+func normalizeMinConfidence(minConfidence string) (string, error) {
+	v := strings.ToLower(strings.TrimSpace(minConfidence))
+	switch v {
+	case "", "low", "medium", "high":
+		return v, nil
+	default:
+		return "", fmt.Errorf("invalid MinConfidence %q: must be high, medium, or low", minConfidence)
+	}
 }
 
 // FindImpact performs transitive caller analysis using BFS.
