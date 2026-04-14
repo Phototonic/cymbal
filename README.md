@@ -140,7 +140,7 @@ All commands support `--json` for structured output.
 
 cymbal is designed as the code navigation layer for AI agents. One command handles most investigations — specific commands exist as escape hatches when you need more control.
 
-Add this to your agent's system prompt (e.g., `CLAUDE.md`, `agent.md`, or MCP tool descriptions).
+Add this to your agent's system prompt (e.g., `CLAUDE.md`, `AGENTS.md`, or MCP tool descriptions).
 
 **Native install:**
 
