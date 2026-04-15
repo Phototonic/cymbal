@@ -6,6 +6,8 @@ All notable changes to cymbal are documented here.
 
 ### Fixed
 
+- **P3-A: EnsureFresh directory-mtime fast path** — `EnsureFresh` now records `last_index_ns` after each index run. On subsequent commands it walks only directories (skipping `.git`, `node_modules`, `vendor`, etc.) and checks their mtimes against the timestamp. If no directory is newer, the full file-walk and hash computation are skipped entirely — ~500 stats on a 10k-file repo instead of ~10k.
+- **P3-B: Improved signature extraction** — `extractSignature` now captures `return_type` nodes for Go, Python, and Rust. Python signatures show `-> ReturnType`. TypeScript/JS function signatures remain limited due to the tree-sitter grammar not exposing a `parameters` field on `function_declaration` — tracked for a future grammar-level fix.
 - **P2-A: Generated code ranking penalties** — symbols in `.pb.go`, `_generated.go`, `_gen.go`, `.gen.ts`, `_pb2.py`, `__generated__`, `.g.dart`, `/generated/`, `/gen/` paths receive a `-50` to `-70` ranking penalty so hand-written code ranks above generated boilerplate.
 - **P2-B: `refs --file <fragment>`** — restricts reference results to files whose path contains the given fragment; composable with `--path` and `--exclude`. Useful for scoping `refs Context` to files that actually import `context.go`.
 - **P2-C: `search --text` delegates to `rg` when available** — when ripgrep is on `PATH`, text search shells out to `rg --no-heading -n` in the repo root for full SIMD/mmap speed, then parses output into the standard `TextResult` format. Falls back to the pure-Go implementation when `rg` is absent. `langToRgType` maps cymbal language names to `rg --type` values.

@@ -292,9 +292,9 @@ Option B — **Connection pool**:
 - [x] P2-B: Refs scope filtering with `--file`
 - [x] P2-C: Text search delegation to rg
 
-### Sprint 3 — P3 (do when capacity allows)
-- [ ] P3-A: EnsureFresh mtime cache
-- [ ] P3-B: Signature extraction improvement
+### Sprint 3 — P3 ✅
+- [x] P3-A: EnsureFresh dir-mtime fast path (tier 1+2)
+- [x] P3-B: Signature extraction — Python return types, Go/Rust improved; TS pending grammar fix
 
 ---
 
