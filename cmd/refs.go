@@ -77,9 +77,7 @@ func refsSymbol(dbPath, name string, limit, ctx int, jsonOut bool) error {
 		return nil
 	}
 
-	if jsonOut {
-		return writeJSON(enrichRefs(results, ctx))
-	}
+	enriched := enrichRefs(results, ctx)
 
 	var refs []refLine
 	for _, r := range results {
@@ -107,8 +105,12 @@ func refsSymbol(dbPath, name string, limit, ctx int, jsonOut bool) error {
 	} else {
 		meta = append(meta, kv{"ref_count", fmt.Sprintf("%d", len(results))})
 	}
-	frontmatter(meta, content.String())
-	return nil
+	return renderJSONOrFrontmatter(
+		jsonOut,
+		enriched,
+		meta,
+		content.String(),
+	)
 }
 
 func refsImporters(dbPath, name string, depth, limit int, jsonOut bool) error {
@@ -122,18 +124,13 @@ func refsImporters(dbPath, name string, depth, limit int, jsonOut bool) error {
 		return nil
 	}
 
-	if jsonOut {
-		return writeJSON(results)
-	}
-
-	var content strings.Builder
-	for _, r := range results {
-		fmt.Fprintf(&content, "%s:%s\n", r.RelPath, r.Import)
-	}
-
-	frontmatter([]kv{
-		{"symbol", name},
-		{"importer_count", fmt.Sprintf("%d", len(results))},
-	}, content.String())
-	return nil
+	return renderJSONOrFrontmatter(
+		jsonOut,
+		results,
+		[]kv{
+			{"symbol", name},
+			{"importer_count", fmt.Sprintf("%d", len(results))},
+		},
+		formatImporterResults(results),
+	)
 }

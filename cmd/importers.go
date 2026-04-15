@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/1broseidon/cymbal/index"
 	"github.com/spf13/cobra"
@@ -29,20 +28,15 @@ var importersCmd = &cobra.Command{
 			return fmt.Errorf("no importers found for '%s'", target)
 		}
 
-		if jsonOut {
-			return writeJSON(results)
-		}
-
-		var content strings.Builder
-		for _, r := range results {
-			fmt.Fprintf(&content, "%s:%s\n", r.RelPath, r.Import)
-		}
-
-		frontmatter([]kv{
-			{"target", target},
-			{"importer_count", fmt.Sprintf("%d", len(results))},
-		}, content.String())
-		return nil
+		return renderJSONOrFrontmatter(
+			jsonOut,
+			results,
+			[]kv{
+				{"target", target},
+				{"importer_count", fmt.Sprintf("%d", len(results))},
+			},
+			formatImporterResults(results),
+		)
 	},
 }
 

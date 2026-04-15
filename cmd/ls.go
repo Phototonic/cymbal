@@ -74,21 +74,21 @@ func lsStats(cmd *cobra.Command, jsonOut bool) error {
 		return fmt.Errorf("no repo detected — run 'cymbal index <path>' or use --db")
 	}
 
-	if jsonOut {
-		return writeJSON(stats)
-	}
-
 	var content strings.Builder
 	for lang, count := range stats.Languages {
 		fmt.Fprintf(&content, "%-16s %d files\n", lang, count)
 	}
 
-	frontmatter([]kv{
-		{"repo", stats.Path},
-		{"files", fmt.Sprintf("%d", stats.FileCount)},
-		{"symbols", fmt.Sprintf("%d", stats.SymbolCount)},
-	}, content.String())
-	return nil
+	return renderJSONOrFrontmatter(
+		jsonOut,
+		stats,
+		[]kv{
+			{"repo", stats.Path},
+			{"files", fmt.Sprintf("%d", stats.FileCount)},
+			{"symbols", fmt.Sprintf("%d", stats.SymbolCount)},
+		},
+		content.String(),
+	)
 }
 
 func lsTree(cmd *cobra.Command, args []string, jsonOut bool) error {

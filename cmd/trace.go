@@ -39,10 +39,6 @@ Examples:
 			return err
 		}
 
-		if jsonOut {
-			return writeJSON(results)
-		}
-
 		if len(results) == 0 {
 			fmt.Printf("No outgoing calls found for '%s'.\n", symName)
 			return nil
@@ -54,13 +50,17 @@ Examples:
 				tr.Depth, tr.Caller, tr.Callee, tr.RelPath, tr.Line)
 		}
 
-		frontmatter([]kv{
-			{"symbol", symName},
-			{"direction", "downward (callees)"},
-			{"depth", fmt.Sprintf("%d", depth)},
-			{"edges", fmt.Sprintf("%d", len(results))},
-		}, content.String())
-		return nil
+		return renderJSONOrFrontmatter(
+			jsonOut,
+			results,
+			[]kv{
+				{"symbol", symName},
+				{"direction", "downward (callees)"},
+				{"depth", fmt.Sprintf("%d", depth)},
+				{"edges", fmt.Sprintf("%d", len(results))},
+			},
+			content.String(),
+		)
 	},
 }
 

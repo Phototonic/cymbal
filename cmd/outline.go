@@ -36,10 +36,6 @@ var outlineCmd = &cobra.Command{
 			return nil
 		}
 
-		if jsonOut {
-			return writeJSON(symbols)
-		}
-
 		relPath := args[0]
 
 		var content strings.Builder
@@ -54,11 +50,15 @@ var outlineCmd = &cobra.Command{
 			content.WriteByte('\n')
 		}
 
-		frontmatter([]kv{
-			{"file", relPath},
-			{"symbol_count", fmt.Sprintf("%d", len(symbols))},
-		}, content.String())
-		return nil
+		return renderJSONOrFrontmatter(
+			jsonOut,
+			symbols,
+			[]kv{
+				{"file", relPath},
+				{"symbol_count", fmt.Sprintf("%d", len(symbols))},
+			},
+			content.String(),
+		)
 	},
 }
 
