@@ -156,44 +156,105 @@ func flexResolve(dbPath, arg string) (*ResolveResult, error) {
 	}, nil
 }
 
-// rankSymbols sorts results by heuristic relevance:
-// - fewer path segments (closer to root = more important)
-// - shorter file path (less nested)
-// - kind priority: struct/class > function > method > variable
+// rankSymbols sorts results so the canonical definition appears first.
+// Scoring: kind priority, path penalties (test/playground/vendor/mirror),
+// source-root bonuses, and depth/length tiebreakers.
 func rankSymbols(results []index.SymbolResult) {
-	kindPriority := map[string]int{
-		"struct": 0, "class": 0, "interface": 0, "type": 0,
-		"function": 1, "method": 2, "enum": 3, "variable": 4,
-	}
 	sort.SliceStable(results, func(i, j int) bool {
-		// Fewer path segments = closer to project root.
-		di := strings.Count(results[i].RelPath, "/")
-		dj := strings.Count(results[j].RelPath, "/")
-		if di != dj {
-			return di < dj
-		}
-		// Kind priority.
-		pi := kindPriority[results[i].Kind]
-		pj := kindPriority[results[j].Kind]
-		if pi != pj {
-			return pi < pj
-		}
-		// Shorter path as tiebreaker.
-		return len(results[i].RelPath) < len(results[j].RelPath)
+		return symbolScore(results[i]) > symbolScore(results[j])
 	})
 }
 
-// resolveSymbol is a backward-compatible wrapper around flexResolve.
-func resolveSymbol(dbPath, file, symbol string) ([]index.SymbolResult, error) {
-	arg := symbol
-	if file != "" {
-		arg = file + ":" + symbol
+func symbolScore(r index.SymbolResult) int {
+	score := 0
+	p := strings.ToLower(r.RelPath)
+
+	// Kind priority.
+	switch r.Kind {
+	case "class", "struct", "interface", "type":
+		score += 60
+	case "function":
+		score += 50
+	case "method":
+		score += 40
+	case "enum":
+		score += 30
+	case "constructor":
+		score += 20
+	case "impl":
+		score += 15
+	case "variable", "constant":
+		score += 10
 	}
-	res, err := flexResolve(dbPath, arg)
-	if err != nil {
-		return nil, err
+
+	// Penalise test paths.
+	for _, seg := range []string{
+		"/test/", "/tests/", "/testing/",
+		"_test.go", "_test.", "_spec.", ".test.", ".spec.",
+		"/testdata/", "/testutil/", "/testutils/",
+	} {
+		if strings.Contains(p, seg) {
+			score -= 80
+			break
+		}
 	}
-	return res.Results, nil
+	// Penalise playground / example paths.
+	for _, seg := range []string{
+		"/playground/", "/example/", "/examples/",
+		"/demo/", "/demos/", "/sample/", "/samples/",
+		"/fixture/", "/fixtures/",
+	} {
+		if strings.Contains(p, seg) {
+			score -= 70
+			break
+		}
+	}
+	// Penalise doc paths.
+	for _, seg := range []string{
+		"/docs/", "/docs_src/", "/doc/", "/documentation/",
+	} {
+		if strings.Contains(p, seg) {
+			score -= 60
+			break
+		}
+	}
+	// Penalise vendored / third-party paths.
+	for _, seg := range []string{
+		"/vendor/", "/node_modules/", "/third_party/",
+		"/external/", "/deps/",
+	} {
+		if strings.Contains(p, seg) {
+			score -= 90
+			break
+		}
+	}
+	// Penalise mirror / alternate build trees.
+	for _, prefix := range []string{
+		"android/", "guava-gwt/",
+	} {
+		if strings.HasPrefix(p, prefix) || strings.Contains(p, "/"+prefix) {
+			score -= 50
+			break
+		}
+	}
+
+	// Prefer well-known source roots.
+	for _, seg := range []string{
+		"/src/", "/pkg/", "/lib/", "/crates/",
+		"/packages/", "/internal/", "/cmd/",
+	} {
+		if strings.Contains(p, seg) {
+			score += 15
+			break
+		}
+	}
+
+	// Shallower paths are more likely canonical.
+	score -= strings.Count(r.RelPath, "/") * 3
+	// Shorter path as minor tiebreaker.
+	score -= len(r.RelPath) / 10
+
+	return score
 }
 
 // refLine is a single reference with file, line, source text, and surrounding context.

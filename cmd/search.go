@@ -44,20 +44,22 @@ Results are ranked: exact match > prefix > fuzzy.`,
 			return fmt.Errorf("no results found for '%s'", query)
 		}
 
-		if jsonOut {
-			return writeJSON(results)
-		}
+		rankSymbols(results)
 
 		var content strings.Builder
 		for _, r := range results {
 			fmt.Fprintf(&content, "%s %s %s:%d\n", r.Kind, r.Name, r.RelPath, r.StartLine)
 		}
 
-		frontmatter([]kv{
-			{"query", query},
-			{"result_count", fmt.Sprintf("%d", len(results))},
-		}, content.String())
-		return nil
+		return renderJSONOrFrontmatter(
+			jsonOut,
+			results,
+			[]kv{
+				{"query", query},
+				{"result_count", fmt.Sprintf("%d", len(results))},
+			},
+			content.String(),
+		)
 	},
 }
 
@@ -80,18 +82,18 @@ func searchText(dbPath, query, lang string, limit int, jsonOut bool) error {
 		return fmt.Errorf("no results found for '%s'", query)
 	}
 
-	if jsonOut {
-		return writeJSON(results)
-	}
-
 	var content strings.Builder
 	for _, r := range results {
 		fmt.Fprintf(&content, "%s:%d: %s\n", r.RelPath, r.Line, r.Snippet)
 	}
 
-	frontmatter([]kv{
-		{"query", query},
-		{"result_count", fmt.Sprintf("%d", len(results))},
-	}, content.String())
-	return nil
+	return renderJSONOrFrontmatter(
+		jsonOut,
+		results,
+		[]kv{
+			{"query", query},
+			{"result_count", fmt.Sprintf("%d", len(results))},
+		},
+		content.String(),
+	)
 }
