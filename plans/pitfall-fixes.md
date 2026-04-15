@@ -287,10 +287,10 @@ Option B — **Connection pool**:
 - [x] P1-B: `--path` / `--exclude` flags on search, refs, show
 - [x] P1-C: `show --all` and structured `also` in JSON
 
-### Sprint 2 — P2 (in progress)
-- [ ] P2-A: Generated code detection in ranking
-- [ ] P2-B: Refs scope filtering with `--file`
-- [ ] P2-C: Text search delegation to rg
+### Sprint 2 — P2 ✅
+- [x] P2-A: Generated code detection in ranking
+- [x] P2-B: Refs scope filtering with `--file`
+- [x] P2-C: Text search delegation to rg
 
 ### Sprint 3 — P3 (do when capacity allows)
 - [ ] P3-A: EnsureFresh mtime cache

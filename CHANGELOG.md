@@ -6,6 +6,10 @@ All notable changes to cymbal are documented here.
 
 ### Fixed
 
+- **P2-A: Generated code ranking penalties** — symbols in `.pb.go`, `_generated.go`, `_gen.go`, `.gen.ts`, `_pb2.py`, `__generated__`, `.g.dart`, `/generated/`, `/gen/` paths receive a `-50` to `-70` ranking penalty so hand-written code ranks above generated boilerplate.
+- **P2-B: `refs --file <fragment>`** — restricts reference results to files whose path contains the given fragment; composable with `--path` and `--exclude`. Useful for scoping `refs Context` to files that actually import `context.go`.
+- **P2-C: `search --text` delegates to `rg` when available** — when ripgrep is on `PATH`, text search shells out to `rg --no-heading -n` in the repo root for full SIMD/mmap speed, then parses output into the standard `TextResult` format. Falls back to the pure-Go implementation when `rg` is absent. `langToRgType` maps cymbal language names to `rg --type` values.
+- **`index.RepoRootFromDB`** — new helper to read `repo_root` metadata without opening a fresh store handle.
 - **P1-A: `context` no longer errors on ambiguous symbols** — `SymbolContext` now ranks all candidates and picks the top result instead of returning `AmbiguousError`. The frontmatter shows `matches: N (also: file:line, ...)` so agents know alternatives exist. `ContextResult` gains `matches`, `match_count`, and `ambiguous` fields in JSON mode.
 - **P1-B: `--path` and `--exclude` filters on `search`, `refs`, `show`** — glob-based path inclusion/exclusion composable with all existing flags. Results are over-fetched from the DB when filters are active so the user limit is met after filtering, not before. Works across symbol search, text search, refs, importers, and show.
 - **P1-C: `show --all` and structured `also` in JSON** — `show` without `--all` still picks the top-ranked definition; `--all` emits every matched definition separated by blank lines. In JSON mode the response now includes `match_count` and `also: []SymbolResult` so agents can follow up on alternatives without string-parsing frontmatter.
