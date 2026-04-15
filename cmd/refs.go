@@ -33,6 +33,10 @@ Note: references are best-effort based on AST name matching, not semantic analys
 		ctx, _ := cmd.Flags().GetInt("context")
 		includes, _ := cmd.Flags().GetStringArray("path")
 		excludes, _ := cmd.Flags().GetStringArray("exclude")
+		fileScope, _ := cmd.Flags().GetString("file")
+		if fileScope != "" {
+			includes = append(includes, fileScope)
+		}
 
 		if impact {
 			importers = true
@@ -67,6 +71,7 @@ func init() {
 	refsCmd.Flags().IntP("context", "C", 1, "lines of context around each call site (0 for single-line)")
 	refsCmd.Flags().StringArray("path", nil, "include only results whose path matches this glob (repeatable)")
 	refsCmd.Flags().StringArray("exclude", nil, "exclude results whose path matches this glob (repeatable)")
+	refsCmd.Flags().String("file", "", "restrict refs to files that import or include the given path fragment")
 	rootCmd.AddCommand(refsCmd)
 }
 

@@ -112,6 +112,32 @@ func SymbolScore(r SymbolResult) int {
 		}
 	}
 
+	// Penalise generated code. Patterns are conservative to avoid false-positives
+	// on files like generator.go or generate_test.go.
+	for _, seg := range []string{
+		".pb.go", "_pb2.py", "_pb2_grpc.py",
+		"_generated.go", "_gen.go", ".gen.go",
+		".generated.ts", ".generated.js", ".gen.ts",
+		"__generated__",
+		"_pb.d.ts", "_grpc.pb.go",
+		".g.dart",
+	} {
+		if strings.HasSuffix(p, seg) || strings.Contains(p, seg+"/") {
+			score -= 70
+			break
+		}
+	}
+	// Also catch files with a "// Code generated" or "DO NOT EDIT" header
+	// via the name pattern; actual content inspection is deferred to P3.
+	for _, seg := range []string{
+		"/generated/", "/gen/",
+	} {
+		if strings.Contains(p, seg) {
+			score -= 50
+			break
+		}
+	}
+
 	// Prefer well-known source roots.
 	for _, seg := range []string{
 		"/src/", "/pkg/", "/lib/", "/crates/",

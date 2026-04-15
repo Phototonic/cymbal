@@ -891,6 +891,16 @@ func SearchSymbolsFlex(dbPath, name string, limit int) ([]SymbolResult, error) {
 }
 
 // SymbolsByName finds symbols by exact name (for show command).
+// RepoRootFromDB returns the repo root stored in the DB, or "" on failure.
+func RepoRootFromDB(dbPath string) string {
+	store, err := openCached(dbPath)
+	if err != nil {
+		return ""
+	}
+	root, _ := store.GetMeta("repo_root")
+	return root
+}
+
 func SymbolsByName(dbPath, name string) ([]SymbolResult, error) {
 	store, err := openCached(dbPath)
 	if err != nil {

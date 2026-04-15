@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/1broseidon/cymbal/index"
@@ -84,9 +86,60 @@ func init() {
 }
 
 func searchText(dbPath, query, lang string, limit int, jsonOut bool, includes, excludes []string) error {
-	results, err := index.TextSearch(dbPath, query, lang, widenPathFilterLimit(limit, len(includes) > 0 || len(excludes) > 0))
+	if rgPath, err := exec.LookPath("rg"); err == nil {
+		return searchTextRg(rgPath, dbPath, query, lang, limit, jsonOut, includes, excludes)
+	}
+	return searchTextGo(dbPath, query, lang, limit, jsonOut, includes, excludes)
+}
+
+// searchTextRg delegates text search to ripgrep for speed.
+func searchTextRg(rgPath, dbPath, query, lang string, limit int, jsonOut bool, includes, excludes []string) error {
+	repoRoot := index.RepoRootFromDB(dbPath)
+	if repoRoot == "" {
+		return searchTextGo(dbPath, query, lang, limit, jsonOut, includes, excludes)
+	}
+
+	args := []string{"--no-heading", "-n", "--color=never"}
+	if lang != "" {
+		if rgLang := langToRgType(lang); rgLang != "" {
+			args = append(args, "--type="+rgLang)
+		}
+	}
+	fetchLimit := widenPathFilterLimit(limit, len(includes) > 0 || len(excludes) > 0)
+	if fetchLimit > 0 {
+		args = append(args, "--max-count=1", fmt.Sprintf("-m%d", fetchLimit))
+	}
+	args = append(args, "--", query, ".")
+
+	cmd := exec.Command(rgPath, args...)
+	cmd.Dir = repoRoot
+	out, err := cmd.Output()
 	if err != nil {
-		return err
+		// rg exits 1 when no matches; that's not an error.
+		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 1 {
+			return fmt.Errorf("no results found for '%s'", query)
+		}
+		// rg unavailable or hard error — fall back.
+		return searchTextGo(dbPath, query, lang, limit, jsonOut, includes, excludes)
+	}
+
+	var results []index.TextResult
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		lineNum := 0
+		fmt.Sscanf(parts[1], "%d", &lineNum)
+		relPath := filepath.ToSlash(parts[0])
+		results = append(results, index.TextResult{
+			RelPath: relPath,
+			Line:    lineNum,
+			Snippet: strings.TrimSpace(parts[2]),
+		})
 	}
 
 	results = filterByPath(results, func(r index.TextResult) string { return r.RelPath }, includes, excludes)
@@ -96,12 +149,30 @@ func searchText(dbPath, query, lang string, limit int, jsonOut bool, includes, e
 	if len(results) == 0 {
 		return fmt.Errorf("no results found for '%s'", query)
 	}
+	return renderTextResults(query, results, jsonOut)
+}
 
+// searchTextGo is the pure-Go fallback using the indexed file list.
+func searchTextGo(dbPath, query, lang string, limit int, jsonOut bool, includes, excludes []string) error {
+	results, err := index.TextSearch(dbPath, query, lang, widenPathFilterLimit(limit, len(includes) > 0 || len(excludes) > 0))
+	if err != nil {
+		return err
+	}
+	results = filterByPath(results, func(r index.TextResult) string { return r.RelPath }, includes, excludes)
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+	if len(results) == 0 {
+		return fmt.Errorf("no results found for '%s'", query)
+	}
+	return renderTextResults(query, results, jsonOut)
+}
+
+func renderTextResults(query string, results []index.TextResult, jsonOut bool) error {
 	var content strings.Builder
 	for _, r := range results {
 		fmt.Fprintf(&content, "%s:%d: %s\n", r.RelPath, r.Line, r.Snippet)
 	}
-
 	return renderJSONOrFrontmatter(
 		jsonOut,
 		results,
@@ -111,4 +182,28 @@ func searchText(dbPath, query, lang string, limit int, jsonOut bool, includes, e
 		},
 		content.String(),
 	)
+}
+
+// langToRgType maps cymbal language names to rg --type values.
+func langToRgType(lang string) string {
+	switch strings.ToLower(lang) {
+	case "go":
+		return "go"
+	case "python":
+		return "py"
+	case "typescript", "tsx":
+		return "ts"
+	case "javascript", "jsx":
+		return "js"
+	case "rust":
+		return "rust"
+	case "java":
+		return "java"
+	case "c":
+		return "c"
+	case "cpp", "c++":
+		return "cpp"
+	default:
+		return ""
+	}
 }
