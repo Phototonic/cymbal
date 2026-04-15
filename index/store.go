@@ -709,14 +709,15 @@ func (s *Store) Structure(limit int) (*StructureResult, error) {
 
 // SearchSymbolsCI performs a case-insensitive exact name match.
 func (s *Store) SearchSymbolsCI(name string, limit int) ([]SymbolResult, error) {
-	// Over-fetch so ranking sees the full candidate set before truncating.
-	fetch := rankFetchWindow(limit)
+	// Exact match: fetch all rows so the ranker sees the full candidate set
+	// before truncating to the user limit. Definition counts are small even
+	// in large repos, so no LIMIT is needed here.
 	rows, err := s.db.Query(`
 		SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
 		FROM symbols s JOIN files f ON s.file_id = f.id
 		WHERE s.name COLLATE NOCASE = ?
-		ORDER BY s.name LIMIT ?
-	`, name, fetch)
+		ORDER BY s.name
+	`, name)
 	if err != nil {
 		return nil, err
 	}
@@ -746,7 +747,7 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 	var err error
 
 	// Over-fetch so the ranking window covers enough candidates before truncating.
-	fetch := rankFetchWindow(limit)
+	fetch := rankFetchWindow(limit, exact)
 
 	if exact {
 		q := `SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
@@ -761,8 +762,13 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 			q += " AND s.language = ?"
 			args = append(args, lang)
 		}
-		q += " ORDER BY s.name LIMIT ?"
-		args = append(args, fetch)
+		// fetch==0 means no LIMIT (fetch all rows so ranking sees full set).
+		if fetch > 0 {
+			q += " ORDER BY s.name LIMIT ?"
+			args = append(args, fetch)
+		} else {
+			q += " ORDER BY s.name"
+		}
 		rows, err = s.db.Query(q, args...)
 	} else {
 		ftsQuery := query + "*"

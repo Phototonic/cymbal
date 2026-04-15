@@ -5,8 +5,19 @@ import (
 	"strings"
 )
 
-// rankFetchWindow returns the over-fetch size: at least limit*5, capped at 500.
-func rankFetchWindow(userLimit int) int {
+// rankFetchWindow returns how many rows to over-fetch before ranking.
+//
+// exactQuery=true: fetch all matching rows (no cap) so the ranking window
+// is never truncated before canonical scoring; exact queries share one symbol
+// name so the extra rows are bounded by definition count, not corpus size.
+//
+// exactQuery=false (FTS): cap at min(limit*5, 500) — different symbol names
+// mix in FTS results so an unbounded fetch would be expensive.
+func rankFetchWindow(userLimit int, exactQuery bool) int {
+	if exactQuery {
+		// 0 means no LIMIT in the SQL query for exact matches.
+		return 0
+	}
 	if userLimit <= 0 {
 		return 500
 	}
