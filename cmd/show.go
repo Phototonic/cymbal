@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/1broseidon/cymbal/index"
 	"github.com/1broseidon/cymbal/walker"
 	"github.com/spf13/cobra"
 )
@@ -31,6 +32,9 @@ Examples:
 		ensureFresh(dbPath)
 		jsonOut := getJSONFlag(cmd)
 		ctx, _ := cmd.Flags().GetInt("context")
+		showAll, _ := cmd.Flags().GetBool("all")
+		includes, _ := cmd.Flags().GetStringArray("path")
+		excludes, _ := cmd.Flags().GetStringArray("exclude")
 
 		for i, target := range args {
 			if i > 0 {
@@ -40,7 +44,7 @@ Examples:
 			if isFilePath(target) {
 				err = showFile(target, ctx, jsonOut)
 			} else {
-				err = showSymbol(dbPath, target, ctx, jsonOut)
+				err = showSymbol(dbPath, target, ctx, jsonOut, showAll, includes, excludes)
 			}
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: %v\n", target, err)
@@ -52,22 +56,21 @@ Examples:
 
 func init() {
 	showCmd.Flags().IntP("context", "C", 0, "lines of context around the target")
+	showCmd.Flags().Bool("all", false, "show all matching symbol definitions")
+	showCmd.Flags().StringArray("path", nil, "include only results whose path matches this glob (repeatable)")
+	showCmd.Flags().StringArray("exclude", nil, "exclude results whose path matches this glob (repeatable)")
 	rootCmd.AddCommand(showCmd)
 }
 
 // isFilePath returns true if the target looks like a file path (not file:Symbol).
 func isFilePath(target string) bool {
-	// Check for "file:suffix" pattern.
 	if idx := strings.LastIndex(target, ":"); idx > 0 {
 		suffix := target[idx+1:]
-		// If suffix starts with a letter (not a digit or 'L'), it's file:Symbol — not a file path.
 		if len(suffix) > 0 && suffix[0] != 'L' && (suffix[0] < '0' || suffix[0] > '9') {
 			return false
 		}
-		// Strip :L1-L2 or :123-456 suffix before checking extension.
 		target = target[:idx]
 	}
-	// Contains path separator — treat as file.
 	if strings.Contains(target, "/") {
 		return true
 	}
@@ -85,7 +88,6 @@ func parseFileTarget(target string) (string, int, int) {
 	rangeStr := target[idx+1:]
 
 	parts := strings.SplitN(rangeStr, "-", 2)
-	// Strip optional "L" prefix (e.g., "L119-L132" or "L119").
 	p0 := strings.TrimPrefix(parts[0], "L")
 	start, err := strconv.Atoi(p0)
 	if err != nil {
@@ -102,6 +104,11 @@ func parseFileTarget(target string) (string, int, int) {
 	return path, start, end
 }
 
+type lineEntry struct {
+	Line    int    `json:"line"`
+	Content string `json:"content"`
+}
+
 func showFile(target string, ctx int, jsonOut bool) error {
 	path, startLine, endLine := parseFileTarget(target)
 
@@ -116,18 +123,12 @@ func showFile(target string, ctx int, jsonOut bool) error {
 	}
 	defer f.Close()
 
-	// Apply context.
 	if startLine > 0 && ctx > 0 {
 		startLine = max(1, startLine-ctx)
 		endLine = endLine + ctx
 	}
 
-	type lineEntry struct {
-		Line    int    `json:"line"`
-		Content string `json:"content"`
-	}
 	var lines []lineEntry
-
 	scanner := bufio.NewScanner(f)
 	lineNum := 0
 	for scanner.Scan() {
@@ -140,6 +141,9 @@ func showFile(target string, ctx int, jsonOut bool) error {
 		}
 		lines = append(lines, lineEntry{Line: lineNum, Content: scanner.Text()})
 	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
 
 	if jsonOut {
 		return writeJSON(map[string]any{
@@ -148,7 +152,6 @@ func showFile(target string, ctx int, jsonOut bool) error {
 		})
 	}
 
-	// Build content from lines.
 	var content strings.Builder
 	for _, l := range lines {
 		content.WriteString(l.Content)
@@ -159,9 +162,7 @@ func showFile(target string, ctx int, jsonOut bool) error {
 	if startLine > 0 {
 		loc = fmt.Sprintf("%s:%d-%d", absPath, startLine, endLine)
 	}
-	frontmatter([]kv{
-		{"file", loc},
-	}, content.String())
+	frontmatter([]kv{{"file", loc}}, content.String())
 	return nil
 }
 
@@ -177,26 +178,13 @@ func isTypeKind(kind string) bool {
 	return false
 }
 
-func showSymbol(dbPath, name string, ctx int, jsonOut bool) error {
-	res, err := flexResolve(dbPath, name)
-	if err != nil {
-		return err
-	}
-
-	if len(res.Results) == 0 {
-		return fmt.Errorf("symbol not found: %s", name)
-	}
-
-	// Auto-resolve: pick the best match (first after ranking).
-	sym := res.Results[0]
+func readSymbolLines(sym index.SymbolResult, ctx int) ([]lineEntry, string, int, int, int, bool, error) {
 	startLine := sym.StartLine
 	endLine := sym.EndLine
 	if ctx > 0 {
 		startLine = max(1, startLine-ctx)
 		endLine = endLine + ctx
 	}
-
-	// Smart truncation: cap large type symbols.
 	totalLines := sym.EndLine - sym.StartLine + 1
 	truncated := false
 	if isTypeKind(sym.Kind) && totalLines > maxTypeShowLines {
@@ -204,18 +192,13 @@ func showSymbol(dbPath, name string, ctx int, jsonOut bool) error {
 		truncated = true
 	}
 
-	if jsonOut {
-		target := fmt.Sprintf("%s:%d-%d", sym.File, startLine, endLine)
-		return showFile(target, 0, true)
-	}
-
-	// Read source and emit frontmatter format.
 	f, err := os.Open(sym.File)
 	if err != nil {
-		return fmt.Errorf("file not found: %s", sym.File)
+		return nil, "", 0, 0, 0, false, fmt.Errorf("file not found: %s", sym.File)
 	}
 	defer f.Close()
 
+	var lines []lineEntry
 	var content strings.Builder
 	scanner := bufio.NewScanner(f)
 	lineNum := 0
@@ -227,30 +210,100 @@ func showSymbol(dbPath, name string, ctx int, jsonOut bool) error {
 		if lineNum > endLine {
 			break
 		}
-		content.WriteString(scanner.Text())
+		text := scanner.Text()
+		lines = append(lines, lineEntry{Line: lineNum, Content: text})
+		content.WriteString(text)
 		content.WriteByte('\n')
 	}
-
+	if err := scanner.Err(); err != nil {
+		return nil, "", 0, 0, 0, false, err
+	}
 	if truncated {
 		fmt.Fprintf(&content, "\n... (%d more lines — use cymbal show %s:%d-%d for full source)\n",
 			totalLines-maxTypeShowLines, sym.RelPath, sym.StartLine, sym.EndLine)
 	}
+	return lines, content.String(), startLine, endLine, totalLines, truncated, nil
+}
 
+func renderShowMeta(sym index.SymbolResult, allResults []index.SymbolResult, fuzzy bool, indexInResults int) []kv {
 	meta := []kv{
 		{"symbol", sym.Name},
 		{"kind", sym.Kind},
 		{"file", fmt.Sprintf("%s:%d", sym.RelPath, sym.StartLine)},
 	}
-	if res.TotalFound > 1 {
-		also := make([]string, 0, len(res.Results)-1)
-		for _, r := range res.Results[1:] {
+	if len(allResults) > 1 {
+		also := make([]string, 0, max(0, len(allResults)-1))
+		for i, r := range allResults {
+			if i == indexInResults {
+				continue
+			}
 			also = append(also, fmt.Sprintf("%s:%d", r.RelPath, r.StartLine))
 		}
-		meta = append(meta, kv{"matches", fmt.Sprintf("%d (also: %s)", res.TotalFound, strings.Join(also, ", "))})
+		meta = append(meta, kv{"matches", fmt.Sprintf("%d (also: %s)", len(allResults), strings.Join(also, ", "))})
 	}
-	if res.Fuzzy {
+	if fuzzy {
 		meta = append(meta, kv{"fuzzy", "true"})
 	}
-	frontmatter(meta, content.String())
+	return meta
+}
+
+func showSymbol(dbPath, name string, ctx int, jsonOut, showAll bool, includes, excludes []string) error {
+	res, err := flexResolve(dbPath, name)
+	if err != nil {
+		return err
+	}
+
+	allResults := filterByPath(res.Results, func(r index.SymbolResult) string { return r.RelPath }, includes, excludes)
+	if len(allResults) == 0 {
+		return fmt.Errorf("symbol not found: %s", name)
+	}
+	displayResults := allResults
+	if !showAll {
+		displayResults = allResults[:1]
+	}
+
+	if jsonOut {
+		payload := make([]map[string]any, 0, len(displayResults))
+		for i, sym := range displayResults {
+			lines, _, startLine, endLine, _, truncated, err := readSymbolLines(sym, ctx)
+			if err != nil {
+				return err
+			}
+			item := map[string]any{
+				"symbol": sym,
+				"file":   sym.File,
+				"lines":  lines,
+			}
+			if truncated {
+				item["range"] = fmt.Sprintf("%s:%d-%d", sym.File, startLine, endLine)
+				item["truncated"] = true
+			}
+			if i == 0 {
+				if len(allResults) > 1 {
+					item["match_count"] = len(allResults)
+					item["also"] = allResults[1:]
+				}
+				if res.Fuzzy {
+					item["fuzzy"] = true
+				}
+			}
+			payload = append(payload, item)
+		}
+		if showAll {
+			return writeJSON(payload)
+		}
+		return writeJSON(payload[0])
+	}
+
+	for i, sym := range displayResults {
+		_, content, _, _, _, _, err := readSymbolLines(sym, ctx)
+		if err != nil {
+			return err
+		}
+		frontmatter(renderShowMeta(sym, allResults, res.Fuzzy, i), content)
+		if showAll && i < len(displayResults)-1 {
+			fmt.Println()
+		}
+	}
 	return nil
 }

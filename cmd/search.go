@@ -24,9 +24,12 @@ Results are ranked: exact match > prefix > fuzzy.`,
 		lang, _ := cmd.Flags().GetString("lang")
 		exact, _ := cmd.Flags().GetBool("exact")
 		textMode, _ := cmd.Flags().GetBool("text")
+		includes, _ := cmd.Flags().GetStringArray("path")
+		excludes, _ := cmd.Flags().GetStringArray("exclude")
+		hasFilters := len(includes) > 0 || len(excludes) > 0
 
 		if textMode {
-			return searchText(dbPath, query, lang, limit, jsonOut)
+			return searchText(dbPath, query, lang, limit, jsonOut, includes, excludes)
 		}
 
 		results, err := index.SearchSymbols(dbPath, index.SearchQuery{
@@ -34,12 +37,16 @@ Results are ranked: exact match > prefix > fuzzy.`,
 			Kind:     kind,
 			Language: lang,
 			Exact:    exact,
-			Limit:    limit,
+			Limit:    widenPathFilterLimit(limit, hasFilters),
 		})
 		if err != nil {
 			return err
 		}
 
+		results = filterByPath(results, func(r index.SymbolResult) string { return r.RelPath }, includes, excludes)
+		if limit > 0 && len(results) > limit {
+			results = results[:limit]
+		}
 		if len(results) == 0 {
 			return fmt.Errorf("no results found for '%s'", query)
 		}
@@ -71,15 +78,21 @@ func init() {
 	searchCmd.Flags().StringP("lang", "l", "", "filter by language (go, python, typescript, etc.)")
 	searchCmd.Flags().BoolP("exact", "e", false, "exact name match only")
 	searchCmd.Flags().BoolP("text", "t", false, "full-text grep across file contents")
+	searchCmd.Flags().StringArray("path", nil, "include only results whose path matches this glob (repeatable)")
+	searchCmd.Flags().StringArray("exclude", nil, "exclude results whose path matches this glob (repeatable)")
 	rootCmd.AddCommand(searchCmd)
 }
 
-func searchText(dbPath, query, lang string, limit int, jsonOut bool) error {
-	results, err := index.TextSearch(dbPath, query, lang, limit)
+func searchText(dbPath, query, lang string, limit int, jsonOut bool, includes, excludes []string) error {
+	results, err := index.TextSearch(dbPath, query, lang, widenPathFilterLimit(limit, len(includes) > 0 || len(excludes) > 0))
 	if err != nil {
 		return err
 	}
 
+	results = filterByPath(results, func(r index.TextResult) string { return r.RelPath }, includes, excludes)
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
 	if len(results) == 0 {
 		return fmt.Errorf("no results found for '%s'", query)
 	}

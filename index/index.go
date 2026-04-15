@@ -644,6 +644,9 @@ type ContextResult struct {
 	TypeRefs    []SymbolResult `json:"type_refs"`
 	Callers     []RefResult    `json:"callers"`
 	FileImports []string       `json:"file_imports"`
+	Matches     []SymbolResult `json:"matches,omitempty"`
+	MatchCount  int            `json:"match_count,omitempty"`
+	Ambiguous   bool           `json:"ambiguous,omitempty"`
 }
 
 // SymbolContext returns bundled context for a symbol: source, type refs, callers, and file imports.
@@ -662,10 +665,11 @@ func SymbolContext(dbPath, symbolName string, callerLimit int) (*ContextResult, 
 		return nil, fmt.Errorf("symbol not found: %s", symbolName)
 	}
 	if len(results) > 1 {
-		return nil, &AmbiguousError{Name: symbolName, Matches: results}
+		RankSymbols(results)
 	}
 
 	sym := results[0]
+	altMatches := append([]SymbolResult(nil), results...)
 
 	// Read source from file.
 	source := readLines(sym.File, sym.StartLine, sym.EndLine)
@@ -694,6 +698,9 @@ func SymbolContext(dbPath, symbolName string, callerLimit int) (*ContextResult, 
 		TypeRefs:    typeRefs,
 		Callers:     callers,
 		FileImports: imports,
+		Matches:     altMatches,
+		MatchCount:  len(altMatches),
+		Ambiguous:   len(altMatches) > 1,
 	}, nil
 }
 

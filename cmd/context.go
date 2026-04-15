@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/1broseidon/cymbal/index"
@@ -33,20 +31,6 @@ Examples:
 
 			result, err := index.SymbolContext(dbPath, name, callers)
 			if err != nil {
-				var ambig *index.AmbiguousError
-				if errors.As(err, &ambig) {
-					if jsonOut {
-						return writeJSON(map[string]any{
-							"ambiguous": true,
-							"matches":   ambig.Matches,
-						})
-					}
-					fmt.Fprintf(os.Stderr, "Multiple matches for '%s' — be more specific:\n", name)
-					for _, r := range ambig.Matches {
-						fmt.Fprintf(os.Stderr, "  %-12s %-40s %s:%d-%d\n", r.Kind, r.Name, r.RelPath, r.StartLine, r.EndLine)
-					}
-					return fmt.Errorf("ambiguous symbol '%s' (%d matches)", name, len(ambig.Matches))
-				}
 				return err
 			}
 
@@ -91,11 +75,19 @@ Examples:
 				}
 			}
 
-			frontmatter([]kv{
+			meta := []kv{
 				{"symbol", sym.Name},
 				{"kind", sym.Kind},
 				{"file", fmt.Sprintf("%s:%d", sym.RelPath, sym.StartLine)},
-			}, content.String())
+			}
+			if result.Ambiguous {
+				also := make([]string, 0, max(0, len(result.Matches)-1))
+				for _, r := range result.Matches[1:] {
+					also = append(also, fmt.Sprintf("%s:%d", r.RelPath, r.StartLine))
+				}
+				meta = append(meta, kv{"matches", fmt.Sprintf("%d (also: %s)", result.MatchCount, strings.Join(also, ", "))})
+			}
+			frontmatter(meta, content.String())
 		}
 		return nil
 	},

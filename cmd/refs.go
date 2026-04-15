@@ -31,6 +31,8 @@ Note: references are best-effort based on AST name matching, not semantic analys
 		depth, _ := cmd.Flags().GetInt("depth")
 		limit, _ := cmd.Flags().GetInt("limit")
 		ctx, _ := cmd.Flags().GetInt("context")
+		includes, _ := cmd.Flags().GetStringArray("path")
+		excludes, _ := cmd.Flags().GetStringArray("exclude")
 
 		if impact {
 			importers = true
@@ -45,9 +47,9 @@ Note: references are best-effort based on AST name matching, not semantic analys
 			}
 			var err error
 			if importers {
-				err = refsImporters(dbPath, name, depth, limit, jsonOut)
+				err = refsImporters(dbPath, name, depth, limit, jsonOut, includes, excludes)
 			} else {
-				err = refsSymbol(dbPath, name, limit, ctx, jsonOut)
+				err = refsSymbol(dbPath, name, limit, ctx, jsonOut, includes, excludes)
 			}
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
@@ -63,15 +65,22 @@ func init() {
 	refsCmd.Flags().IntP("depth", "D", 1, "import chain depth for --importers (max 3)")
 	refsCmd.Flags().IntP("limit", "n", 20, "max results")
 	refsCmd.Flags().IntP("context", "C", 1, "lines of context around each call site (0 for single-line)")
+	refsCmd.Flags().StringArray("path", nil, "include only results whose path matches this glob (repeatable)")
+	refsCmd.Flags().StringArray("exclude", nil, "exclude results whose path matches this glob (repeatable)")
 	rootCmd.AddCommand(refsCmd)
 }
 
-func refsSymbol(dbPath, name string, limit, ctx int, jsonOut bool) error {
-	results, err := index.FindReferences(dbPath, name, limit)
+func refsSymbol(dbPath, name string, limit, ctx int, jsonOut bool, includes, excludes []string) error {
+	fetchLimit := widenPathFilterLimit(limit, len(includes) > 0 || len(excludes) > 0)
+	results, err := index.FindReferences(dbPath, name, fetchLimit)
 	if err != nil {
 		return err
 	}
 
+	results = filterByPath(results, func(r index.RefResult) string { return r.RelPath }, includes, excludes)
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
 	if len(results) == 0 {
 		fmt.Fprintf(os.Stderr, "No references found for '%s'.\n", name)
 		return nil
@@ -113,12 +122,17 @@ func refsSymbol(dbPath, name string, limit, ctx int, jsonOut bool) error {
 	)
 }
 
-func refsImporters(dbPath, name string, depth, limit int, jsonOut bool) error {
-	results, err := index.FindImporters(dbPath, name, depth, limit)
+func refsImporters(dbPath, name string, depth, limit int, jsonOut bool, includes, excludes []string) error {
+	fetchLimit := widenPathFilterLimit(limit, len(includes) > 0 || len(excludes) > 0)
+	results, err := index.FindImporters(dbPath, name, depth, fetchLimit)
 	if err != nil {
 		return err
 	}
 
+	results = filterByPath(results, func(r index.ImporterResult) string { return r.RelPath }, includes, excludes)
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
 	if len(results) == 0 {
 		fmt.Fprintf(os.Stderr, "No importers found for '%s'.\n", name)
 		return nil
