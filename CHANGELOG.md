@@ -2,6 +2,25 @@
 
 All notable changes to cymbal are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **Canonical definition ranking** — `search` and `show` now return the most relevant definition first. A new `symbolScore` ranker penalises test (`-80`), playground/example (`-70`), docs (`-60`), vendor (`-90`), and mirror-tree (`-50`) paths, while boosting well-known source roots (`/src/`, `/pkg/`, `/crates/`, `/packages/`). Kind priority, path depth, and path length serve as tiebreakers. Before: `show createServer` in Vite opened a playground copy; `search ImmutableList` in Guava ranked the android mirror first. After: canonical definitions rank #1 across all benchmark cases.
+
+### Added
+
+- **Ground-truth precision/recall benchmark** — the bench harness now validates cymbal output against curated expected-definition and expected-reference sets per symbol, computing true precision, recall, and F1 across `search`, `show`, and `refs` for every corpus repo.
+- **Canonical ranking hard-mode benchmark** — a dedicated evaluation phase that measures search@1 accuracy, MRR, and show-exactness against hand-picked canonical definitions, with a tuned-grep baseline for fair comparison. Regression gating prevents canonical-ranking regressions from passing CI.
+- **Grep footgun benchmark** — explicit test cases where common names (e.g. `Context` 915 grep hits → 5 cymbal results, `FastAPI` 11k → 8) prove cymbal's semantic advantage over text search. Measured per-repo with noise counts and pass/fail gates.
+- **Tuned-grep baseline** — the bench harness now runs a path-aware, word-boundary grep scorer as a credible expert-grep comparison, not just naive `rg`.
+
+### Changed
+
+- **DRY output rendering** — extracted `renderJSONOrFrontmatter` and `formatImporterResults` into `cmd/render.go`, deduplicating the json-or-frontmatter output pattern across `importers`, `ls`, `outline`, `refs`, `search`, and `trace` commands.
+- **Removed unused `resolveSymbol` wrapper** from `cmd/output.go`.
+- **Benchmark corpus enriched** — all 7 corpus repos now carry tier/complexity/tags metadata, stronger per-op accuracy assertions (`search_contains`, `search_excludes`, `show_contains_all`, `refs_contains`, etc.), and full ground-truth specs with canonical/prefer_paths/avoid_paths for 9 hard-disambiguation cases.
+
 ## [0.9.3] - 2026-04-14
 
 ### Added
