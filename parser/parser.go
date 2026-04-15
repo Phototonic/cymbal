@@ -1200,18 +1200,45 @@ func (e *symbolExtractor) classifyGeneric(nodeType string, node *sitter.Node) (s
 func (e *symbolExtractor) extractSignature(node *sitter.Node, kind string) string {
 	switch kind {
 	case "function", "method", "constructor", "getter", "setter":
+		var sig string
+
+		// Parameters: try field name first, then language-specific node types.
 		params := node.ChildByFieldName("parameters")
 		if params != nil {
-			return params.Content(e.src)
+			sig = params.Content(e.src)
+		} else if fvp := findChildByType(node, "function_value_parameters"); fvp != nil {
+			// Kotlin
+			sig = fvp.Content(e.src)
+		} else if fpl := findChildByType(node, "formal_parameter_list"); fpl != nil {
+			// Dart
+			sig = fpl.Content(e.src)
 		}
-		// Kotlin grammar has no "parameters" field — look up by type.
-		if fvp := findChildByType(node, "function_value_parameters"); fvp != nil {
-			return fvp.Content(e.src)
+
+		// Return type: append if present. Covers TypeScript, Python, Rust, Go.
+		if ret := node.ChildByFieldName("return_type"); ret != nil {
+			rt := ret.Content(e.src)
+			switch e.lang {
+			case "python":
+				sig += " -> " + rt
+			case "go":
+				sig += " " + rt
+			default:
+				// TypeScript, Rust, etc. — colon or arrow already in the node.
+				if len(rt) > 0 && rt[0] != ':' && rt[0] != ' ' {
+					sig += ": " + rt
+				} else {
+					sig += rt
+				}
+			}
 		}
-		// Dart grammar uses formal_parameter_list.
-		if fpl := findChildByType(node, "formal_parameter_list"); fpl != nil {
-			return fpl.Content(e.src)
+		// TypeScript type_annotation on the node (alternative to return_type field).
+		if sig != "" && e.lang == "typescript" || e.lang == "tsx" || e.lang == "javascript" || e.lang == "jsx" {
+			if ta := findChildByType(node, "type_annotation"); ta != nil && node.ChildByFieldName("return_type") == nil {
+				sig += ta.Content(e.src)
+			}
 		}
+		return sig
+
 	case "struct", "class", "interface", "trait", "object", "enum", "mixin", "extension":
 		content := node.Content(e.src)
 		for i, ch := range content {

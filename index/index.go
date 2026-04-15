@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -346,6 +347,10 @@ func Index(root, dbPath string, opts Options) (*Stats, error) {
 		Errors:       pe + we,
 	}
 
+	// Record index timestamp so EnsureFresh can skip the full walk when
+	// no directories have been modified since this point.
+	_ = store.SetMeta("last_index_ns", fmt.Sprintf("%d", time.Now().UnixNano()))
+
 	return stats, nil
 }
 
@@ -374,16 +379,31 @@ func EnsureFresh(dbPath string) int {
 	}
 
 	repoRoot, err := store.GetMeta("repo_root")
-	store.Close()
-
 	if err != nil || repoRoot == "" {
-		// No repo_root in DB — this is a fresh/empty database.
-		// Auto-index from cwd's git root.
+		store.Close()
 		repoRoot = autoDetectRoot()
 		if repoRoot == "" {
 			return 0
 		}
 		fmt.Fprintf(os.Stderr, "Building index for %s ...\n", repoRoot)
+		stats, err := Index(repoRoot, dbPath, Options{})
+		if err != nil {
+			return 0
+		}
+		return stats.FilesIndexed + stats.StaleRemoved
+	}
+
+	// Fast path: check if any directory under repoRoot has been modified
+	// since the last index run. If nothing changed, skip the full walk.
+	lastIndexStr, _ := store.GetMeta("last_index_ns")
+	store.Close()
+
+	if lastIndexStr != "" {
+		var lastNs int64
+		fmt.Sscanf(lastIndexStr, "%d", &lastNs)
+		if lastNs > 0 && !anyDirModifiedSince(repoRoot, lastNs) {
+			return 0
+		}
 	}
 
 	stats, err := Index(repoRoot, dbPath, Options{})
@@ -391,6 +411,41 @@ func EnsureFresh(dbPath string) int {
 		return 0
 	}
 	return stats.FilesIndexed + stats.StaleRemoved
+}
+
+// anyDirModifiedSince walks directories under root and returns true if any
+// directory's mtime is newer than the given unix-nano timestamp. This is
+// much cheaper than stating every file: on a 10k-file repo with 500 dirs,
+// it does ~500 stats instead of ~10k.
+func anyDirModifiedSince(root string, sinceNs int64) bool {
+	since := time.Unix(0, sinceNs)
+	dirty := false
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		base := filepath.Base(path)
+		// Skip known irrelevant directories (same set as walker).
+		switch base {
+		case ".git", "node_modules", "vendor", ".venv", "venv",
+			"__pycache__", ".tox", ".mypy_cache", "dist", "build",
+			".next", ".nuxt", "target", ".idea", ".vscode":
+			return filepath.SkipDir
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if info.ModTime().After(since) {
+			dirty = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return dirty
 }
 
 // autoDetectRoot resolves the git root from cwd for auto-indexing.
