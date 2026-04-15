@@ -1,622 +1,622 @@
 {
-  "timestamp": "2026-04-15T15:27:17Z",
+  "timestamp": "2026-04-15T17:01:22Z",
   "platform": "linux/amd64",
   "cpus": 24,
   "entries": {
     "fastapi/cymbal/index": {
-      "median_ms": 666.866,
+      "median_ms": 725.361,
       "output_bytes": 131
     },
     "fastapi/cymbal/investigate/APIRouter": {
-      "median_ms": 25.882,
+      "median_ms": 27.746,
       "output_bytes": 4719
     },
     "fastapi/cymbal/investigate/Depends": {
-      "median_ms": 25.536,
+      "median_ms": 26.203,
       "output_bytes": 2856
     },
     "fastapi/cymbal/investigate/FastAPI": {
-      "median_ms": 29.578,
+      "median_ms": 29.557,
       "output_bytes": 4414
     },
     "fastapi/cymbal/refs/APIRouter": {
-      "median_ms": 26.27,
+      "median_ms": 27.112,
       "output_bytes": 2147
     },
     "fastapi/cymbal/refs/Depends": {
-      "median_ms": 25.541,
+      "median_ms": 25.815,
       "output_bytes": 3235
     },
     "fastapi/cymbal/refs/FastAPI": {
-      "median_ms": 25.135,
+      "median_ms": 26.286,
       "output_bytes": 1587
     },
     "fastapi/cymbal/reindex": {
-      "median_ms": 22.538,
+      "median_ms": 22.266,
       "output_bytes": 127
     },
     "fastapi/cymbal/search/APIRouter": {
-      "median_ms": 24.468,
+      "median_ms": 27.458,
       "output_bytes": 80
     },
     "fastapi/cymbal/search/Depends": {
-      "median_ms": 24.253,
+      "median_ms": 25.631,
       "output_bytes": 1365
     },
     "fastapi/cymbal/search/FastAPI": {
-      "median_ms": 25.384,
+      "median_ms": 25.332,
       "output_bytes": 598
     },
     "fastapi/cymbal/show/APIRouter": {
-      "median_ms": 24.844,
+      "median_ms": 29.712,
       "output_bytes": 2175
     },
     "fastapi/cymbal/show/Depends": {
-      "median_ms": 23.173,
+      "median_ms": 24.359,
       "output_bytes": 553
     },
     "fastapi/cymbal/show/FastAPI": {
-      "median_ms": 24.998,
+      "median_ms": 25.335,
       "output_bytes": 1892
     },
     "fastapi/ripgrep/refs/APIRouter": {
-      "median_ms": 10.141,
+      "median_ms": 11.25,
       "output_bytes": 69898
     },
     "fastapi/ripgrep/refs/Depends": {
-      "median_ms": 11.18,
+      "median_ms": 11.662,
       "output_bytes": 149611
     },
     "fastapi/ripgrep/refs/FastAPI": {
-      "median_ms": 16.707,
+      "median_ms": 17.58,
       "output_bytes": 1756910
     },
     "fastapi/ripgrep/search/APIRouter": {
-      "median_ms": 10.632,
+      "median_ms": 11.136,
       "output_bytes": 3343
     },
     "fastapi/ripgrep/search/Depends": {
-      "median_ms": 10.6,
+      "median_ms": 11.415,
       "output_bytes": 10891
     },
     "fastapi/ripgrep/search/FastAPI": {
-      "median_ms": 14.882,
+      "median_ms": 15.408,
       "output_bytes": 84439
     },
     "fastapi/ripgrep/show/APIRouter": {
-      "median_ms": 10.854,
+      "median_ms": 11.791,
       "output_bytes": 6502
     },
     "fastapi/ripgrep/show/Depends": {
-      "median_ms": 11.192,
+      "median_ms": 12.538,
       "output_bytes": 8255
     },
     "fastapi/ripgrep/show/FastAPI": {
-      "median_ms": 10.655,
+      "median_ms": 11.736,
       "output_bytes": 11558
     },
     "gin/cymbal/index": {
-      "median_ms": 273.771,
+      "median_ms": 281.574,
       "output_bytes": 125
     },
     "gin/cymbal/investigate/Context": {
-      "median_ms": 13.193,
+      "median_ms": 16.377,
       "output_bytes": 1620
     },
     "gin/cymbal/investigate/HandlerFunc": {
-      "median_ms": 12.652,
+      "median_ms": 13.441,
       "output_bytes": 420
     },
     "gin/cymbal/investigate/New": {
-      "median_ms": 15.324,
-      "output_bytes": 2535
+      "median_ms": 14.908,
+      "output_bytes": 2550
     },
     "gin/cymbal/investigate/ServeHTTP": {
-      "median_ms": 13.766,
+      "median_ms": 14.661,
       "output_bytes": 2065
     },
     "gin/cymbal/refs/Context": {
-      "median_ms": 12.977,
+      "median_ms": 14.007,
       "output_bytes": 1040
     },
     "gin/cymbal/refs/HandlerFunc": {
-      "median_ms": 12.011,
+      "median_ms": 11.978,
       "output_bytes": 561
     },
     "gin/cymbal/refs/New": {
-      "median_ms": 11.924,
+      "median_ms": 12.815,
       "output_bytes": 580
     },
     "gin/cymbal/refs/ServeHTTP": {
-      "median_ms": 11.161,
+      "median_ms": 12.946,
       "output_bytes": 932
     },
     "gin/cymbal/reindex": {
-      "median_ms": 8.993,
+      "median_ms": 9.267,
       "output_bytes": 120
     },
     "gin/cymbal/search/Context": {
-      "median_ms": 11.412,
+      "median_ms": 12.391,
       "output_bytes": 214
     },
     "gin/cymbal/search/HandlerFunc": {
-      "median_ms": 11.794,
+      "median_ms": 12.339,
       "output_bytes": 70
     },
     "gin/cymbal/search/New": {
-      "median_ms": 11.606,
+      "median_ms": 12.82,
       "output_bytes": 482
     },
     "gin/cymbal/search/ServeHTTP": {
-      "median_ms": 11.15,
+      "median_ms": 12.254,
       "output_bytes": 103
     },
     "gin/cymbal/show/Context": {
-      "median_ms": 10.5,
+      "median_ms": 11.215,
       "output_bytes": 1083
     },
     "gin/cymbal/show/HandlerFunc": {
-      "median_ms": 10.834,
+      "median_ms": 12.023,
       "output_bytes": 87
     },
     "gin/cymbal/show/New": {
-      "median_ms": 11.278,
+      "median_ms": 11.318,
       "output_bytes": 1073
     },
     "gin/cymbal/show/ServeHTTP": {
-      "median_ms": 11.805,
+      "median_ms": 11.183,
       "output_bytes": 306
     },
     "gin/ripgrep/refs/Context": {
-      "median_ms": 5.155,
+      "median_ms": 5.895,
       "output_bytes": 65820
     },
     "gin/ripgrep/refs/HandlerFunc": {
-      "median_ms": 5.574,
+      "median_ms": 5.066,
       "output_bytes": 6582
     },
     "gin/ripgrep/refs/New": {
-      "median_ms": 5.33,
+      "median_ms": 6.214,
       "output_bytes": 37616
     },
     "gin/ripgrep/refs/ServeHTTP": {
-      "median_ms": 5.147,
+      "median_ms": 6.6,
       "output_bytes": 953
     },
     "gin/ripgrep/search/Context": {
-      "median_ms": 5.953,
+      "median_ms": 5.923,
       "output_bytes": 528
     },
     "gin/ripgrep/search/HandlerFunc": {
-      "median_ms": 5.027,
+      "median_ms": 6.813,
       "output_bytes": 214
     },
     "gin/ripgrep/search/New": {
-      "median_ms": 5.832,
+      "median_ms": 6.33,
       "output_bytes": 1260
     },
     "gin/ripgrep/search/ServeHTTP": {
-      "median_ms": 5.316,
+      "median_ms": 6.658,
       "output_bytes": 193
     },
     "gin/ripgrep/show/Context": {
-      "median_ms": 6.055,
+      "median_ms": 6.416,
       "output_bytes": 1752
     },
     "gin/ripgrep/show/HandlerFunc": {
-      "median_ms": 4.961,
+      "median_ms": 6.138,
       "output_bytes": 1173
     },
     "gin/ripgrep/show/New": {
-      "median_ms": 4.957,
+      "median_ms": 6.458,
       "output_bytes": 6544
     },
     "gin/ripgrep/show/ServeHTTP": {
-      "median_ms": 6.157,
+      "median_ms": 6.154,
       "output_bytes": 0
     },
     "guava/cymbal/index": {
-      "median_ms": 7500.597,
+      "median_ms": 7730.22,
       "output_bytes": 131
     },
     "guava/cymbal/investigate/ImmutableList": {
-      "median_ms": 35.75,
+      "median_ms": 39.373,
       "output_bytes": 7965
     },
     "guava/cymbal/investigate/Optional": {
-      "median_ms": 36.568,
+      "median_ms": 39.127,
       "output_bytes": 4697
     },
     "guava/cymbal/investigate/Preconditions": {
-      "median_ms": 36.677,
+      "median_ms": 36.715,
       "output_bytes": 8372
     },
     "guava/cymbal/refs/ImmutableList": {
-      "median_ms": 35.48,
+      "median_ms": 37.053,
       "output_bytes": 41
     },
     "guava/cymbal/refs/Optional": {
-      "median_ms": 35.373,
+      "median_ms": 36.004,
       "output_bytes": 36
     },
     "guava/cymbal/refs/Preconditions": {
-      "median_ms": 34.787,
+      "median_ms": 37.549,
       "output_bytes": 41
     },
     "guava/cymbal/reindex": {
-      "median_ms": 33.368,
+      "median_ms": 33.921,
       "output_bytes": 125
     },
     "guava/cymbal/search/ImmutableList": {
-      "median_ms": 36.976,
+      "median_ms": 38.105,
       "output_bytes": 2337
     },
     "guava/cymbal/search/Optional": {
-      "median_ms": 37.184,
+      "median_ms": 38.837,
       "output_bytes": 1794
     },
     "guava/cymbal/search/Preconditions": {
-      "median_ms": 36.132,
+      "median_ms": 37.442,
       "output_bytes": 565
     },
     "guava/cymbal/show/ImmutableList": {
-      "median_ms": 35.478,
+      "median_ms": 36.284,
       "output_bytes": 2645
     },
     "guava/cymbal/show/Optional": {
-      "median_ms": 34.933,
+      "median_ms": 36.497,
       "output_bytes": 2921
     },
     "guava/cymbal/show/Preconditions": {
-      "median_ms": 35.2,
+      "median_ms": 37.548,
       "output_bytes": 2830
     },
     "guava/ripgrep/refs/ImmutableList": {
-      "median_ms": 13.268,
+      "median_ms": 13.479,
       "output_bytes": 483881
     },
     "guava/ripgrep/refs/Optional": {
-      "median_ms": 12.505,
+      "median_ms": 12.143,
       "output_bytes": 135497
     },
     "guava/ripgrep/refs/Preconditions": {
-      "median_ms": 13.04,
+      "median_ms": 13.494,
       "output_bytes": 233877
     },
     "guava/ripgrep/search/ImmutableList": {
-      "median_ms": 12.389,
+      "median_ms": 12.532,
       "output_bytes": 37331
     },
     "guava/ripgrep/search/Optional": {
-      "median_ms": 11.495,
+      "median_ms": 12.97,
       "output_bytes": 7454
     },
     "guava/ripgrep/search/Preconditions": {
-      "median_ms": 13.397,
+      "median_ms": 13.333,
       "output_bytes": 57377
     },
     "guava/ripgrep/show/ImmutableList": {
-      "median_ms": 13.474,
+      "median_ms": 13.077,
       "output_bytes": 84410
     },
     "guava/ripgrep/show/Optional": {
-      "median_ms": 12.652,
+      "median_ms": 13.724,
       "output_bytes": 17433
     },
     "guava/ripgrep/show/Preconditions": {
-      "median_ms": 13.297,
+      "median_ms": 13.118,
       "output_bytes": 12501
     },
     "jq/cymbal/index": {
-      "median_ms": 424.306,
+      "median_ms": 435.262,
       "output_bytes": 124
     },
     "jq/cymbal/investigate/jq_next": {
-      "median_ms": 13.63,
+      "median_ms": 15.967,
       "output_bytes": 20520
     },
     "jq/cymbal/investigate/jv_parse": {
-      "median_ms": 14.42,
+      "median_ms": 15.637,
       "output_bytes": 1324
     },
     "jq/cymbal/refs/jq_next": {
-      "median_ms": 11.79,
+      "median_ms": 12.644,
       "output_bytes": 886
     },
     "jq/cymbal/refs/jv_parse": {
-      "median_ms": 12.441,
+      "median_ms": 12.55,
       "output_bytes": 1687
     },
     "jq/cymbal/reindex": {
-      "median_ms": 9.183,
+      "median_ms": 10.503,
       "output_bytes": 119
     },
     "jq/cymbal/search/jq_next": {
-      "median_ms": 11.587,
+      "median_ms": 12.141,
       "output_bytes": 74
     },
     "jq/cymbal/search/jv_parse": {
-      "median_ms": 11.884,
+      "median_ms": 13.666,
       "output_bytes": 741
     },
     "jq/cymbal/show/jq_next": {
-      "median_ms": 11.483,
+      "median_ms": 12.682,
       "output_bytes": 19649
     },
     "jq/cymbal/show/jv_parse": {
-      "median_ms": 12.227,
+      "median_ms": 12.448,
       "output_bytes": 150
     },
     "jq/ripgrep/refs/jq_next": {
-      "median_ms": 6.696,
+      "median_ms": 7.42,
       "output_bytes": 652
     },
     "jq/ripgrep/refs/jv_parse": {
-      "median_ms": 7.181,
+      "median_ms": 7.217,
       "output_bytes": 6570
     },
     "jq/ripgrep/search/jq_next": {
-      "median_ms": 6.934,
+      "median_ms": 7.297,
       "output_bytes": 126
     },
     "jq/ripgrep/search/jv_parse": {
-      "median_ms": 6.28,
+      "median_ms": 6.994,
       "output_bytes": 311
     },
     "jq/ripgrep/show/jq_next": {
-      "median_ms": 7.191,
+      "median_ms": 7.536,
       "output_bytes": 0
     },
     "jq/ripgrep/show/jv_parse": {
-      "median_ms": 7.017,
+      "median_ms": 6.915,
       "output_bytes": 28195
     },
     "kubectl/cymbal/index": {
-      "median_ms": 769.281,
+      "median_ms": 859.425,
       "output_bytes": 130
     },
     "kubectl/cymbal/investigate/Factory": {
-      "median_ms": 16.519,
+      "median_ms": 18.162,
       "output_bytes": 1491
     },
     "kubectl/cymbal/investigate/NewCmdApply": {
-      "median_ms": 19.02,
+      "median_ms": 20.137,
       "output_bytes": 2806
     },
     "kubectl/cymbal/investigate/NewCmdGet": {
-      "median_ms": 18.963,
+      "median_ms": 20.173,
       "output_bytes": 4369
     },
     "kubectl/cymbal/refs/Factory": {
-      "median_ms": 15.282,
+      "median_ms": 16.052,
       "output_bytes": 35
     },
     "kubectl/cymbal/refs/NewCmdApply": {
-      "median_ms": 19.044,
+      "median_ms": 19.608,
       "output_bytes": 459
     },
     "kubectl/cymbal/refs/NewCmdGet": {
-      "median_ms": 17.418,
+      "median_ms": 17.446,
       "output_bytes": 458
     },
     "kubectl/cymbal/reindex": {
-      "median_ms": 13.417,
+      "median_ms": 15.433,
       "output_bytes": 125
     },
     "kubectl/cymbal/search/Factory": {
-      "median_ms": 15.836,
+      "median_ms": 18.85,
       "output_bytes": 198
     },
     "kubectl/cymbal/search/NewCmdApply": {
-      "median_ms": 17.432,
+      "median_ms": 16.15,
       "output_bytes": 329
     },
     "kubectl/cymbal/search/NewCmdGet": {
-      "median_ms": 16.34,
+      "median_ms": 15.636,
       "output_bytes": 83
     },
     "kubectl/cymbal/show/Factory": {
-      "median_ms": 15.481,
+      "median_ms": 15.346,
       "output_bytes": 1464
     },
     "kubectl/cymbal/show/NewCmdApply": {
-      "median_ms": 15.238,
+      "median_ms": 16.456,
       "output_bytes": 956
     },
     "kubectl/cymbal/show/NewCmdGet": {
-      "median_ms": 15.301,
+      "median_ms": 16.643,
       "output_bytes": 2613
     },
     "kubectl/ripgrep/refs/Factory": {
-      "median_ms": 8.34,
+      "median_ms": 8.215,
       "output_bytes": 51773
     },
     "kubectl/ripgrep/refs/NewCmdApply": {
-      "median_ms": 7.96,
+      "median_ms": 7.549,
       "output_bytes": 4334
     },
     "kubectl/ripgrep/refs/NewCmdGet": {
-      "median_ms": 7.184,
+      "median_ms": 7.86,
       "output_bytes": 4085
     },
     "kubectl/ripgrep/search/Factory": {
-      "median_ms": 7.712,
+      "median_ms": 7.851,
       "output_bytes": 4254
     },
     "kubectl/ripgrep/search/NewCmdApply": {
-      "median_ms": 7.58,
+      "median_ms": 7.832,
       "output_bytes": 229
     },
     "kubectl/ripgrep/search/NewCmdGet": {
-      "median_ms": 7.118,
+      "median_ms": 7.912,
       "output_bytes": 106
     },
     "kubectl/ripgrep/show/Factory": {
-      "median_ms": 8.97,
+      "median_ms": 10.48,
       "output_bytes": 2226
     },
     "kubectl/ripgrep/show/NewCmdApply": {
-      "median_ms": 9.299,
+      "median_ms": 9.523,
       "output_bytes": 9953
     },
     "kubectl/ripgrep/show/NewCmdGet": {
-      "median_ms": 8.789,
+      "median_ms": 8.665,
       "output_bytes": 3129
     },
     "ripgrep/cymbal/index": {
-      "median_ms": 413.456,
+      "median_ms": 428.385,
       "output_bytes": 130
     },
     "ripgrep/cymbal/investigate/SearchWorker": {
-      "median_ms": 12.764,
+      "median_ms": 12.937,
       "output_bytes": 366
     },
     "ripgrep/cymbal/investigate/Searcher": {
-      "median_ms": 12.456,
+      "median_ms": 13.577,
       "output_bytes": 3404
     },
     "ripgrep/cymbal/refs/SearchWorker": {
-      "median_ms": 11.239,
+      "median_ms": 12.131,
       "output_bytes": 40
     },
     "ripgrep/cymbal/refs/Searcher": {
-      "median_ms": 12.301,
+      "median_ms": 12.462,
       "output_bytes": 36
     },
     "ripgrep/cymbal/reindex": {
-      "median_ms": 9.052,
+      "median_ms": 11.11,
       "output_bytes": 125
     },
     "ripgrep/cymbal/search/SearchWorker": {
-      "median_ms": 11.367,
+      "median_ms": 12.439,
       "output_bytes": 289
     },
     "ripgrep/cymbal/search/Searcher": {
-      "median_ms": 12.263,
+      "median_ms": 12.488,
       "output_bytes": 601
     },
     "ripgrep/cymbal/show/SearchWorker": {
-      "median_ms": 11.685,
+      "median_ms": 11.815,
       "output_bytes": 339
     },
     "ripgrep/cymbal/show/Searcher": {
-      "median_ms": 11.809,
+      "median_ms": 12.755,
       "output_bytes": 1614
     },
     "ripgrep/ripgrep/refs/SearchWorker": {
-      "median_ms": 6.456,
+      "median_ms": 6.201,
       "output_bytes": 1254
     },
     "ripgrep/ripgrep/refs/Searcher": {
-      "median_ms": 6.511,
+      "median_ms": 6.867,
       "output_bytes": 26355
     },
     "ripgrep/ripgrep/search/SearchWorker": {
-      "median_ms": 7.002,
+      "median_ms": 6.253,
       "output_bytes": 55
     },
     "ripgrep/ripgrep/search/Searcher": {
-      "median_ms": 7.062,
+      "median_ms": 6.732,
       "output_bytes": 692
     },
     "ripgrep/ripgrep/show/SearchWorker": {
-      "median_ms": 6.768,
+      "median_ms": 6.905,
       "output_bytes": 3663
     },
     "ripgrep/ripgrep/show/Searcher": {
-      "median_ms": 7.052,
+      "median_ms": 7.201,
       "output_bytes": 6983
     },
     "vite/cymbal/index": {
-      "median_ms": 525.525,
+      "median_ms": 565.492,
       "output_bytes": 128
     },
     "vite/cymbal/investigate/ViteDevServer": {
-      "median_ms": 27.367,
+      "median_ms": 28.458,
       "output_bytes": 2150
     },
     "vite/cymbal/investigate/createServer": {
-      "median_ms": 29.599,
+      "median_ms": 30.494,
       "output_bytes": 3916
     },
     "vite/cymbal/investigate/defineConfig": {
-      "median_ms": 32.883,
+      "median_ms": 35.2,
       "output_bytes": 1818
     },
     "vite/cymbal/refs/ViteDevServer": {
-      "median_ms": 25.554,
+      "median_ms": 26.584,
       "output_bytes": 41
     },
     "vite/cymbal/refs/createServer": {
-      "median_ms": 26.793,
+      "median_ms": 28.286,
       "output_bytes": 2807
     },
     "vite/cymbal/refs/defineConfig": {
-      "median_ms": 27.818,
+      "median_ms": 27.645,
       "output_bytes": 2634
     },
     "vite/cymbal/reindex": {
-      "median_ms": 23.942,
+      "median_ms": 25.541,
       "output_bytes": 124
     },
     "vite/cymbal/search/ViteDevServer": {
-      "median_ms": 26.636,
+      "median_ms": 28.467,
       "output_bytes": 112
     },
     "vite/cymbal/search/createServer": {
-      "median_ms": 27.037,
+      "median_ms": 28.495,
       "output_bytes": 1051
     },
     "vite/cymbal/search/defineConfig": {
-      "median_ms": 25.748,
+      "median_ms": 28.102,
       "output_bytes": 103
     },
     "vite/cymbal/show/ViteDevServer": {
-      "median_ms": 25.726,
+      "median_ms": 25.858,
       "output_bytes": 2139
     },
     "vite/cymbal/show/createServer": {
-      "median_ms": 26.046,
+      "median_ms": 28.304,
       "output_bytes": 604
     },
     "vite/cymbal/show/defineConfig": {
-      "median_ms": 25.25,
+      "median_ms": 27.553,
       "output_bytes": 180
     },
     "vite/ripgrep/refs/ViteDevServer": {
-      "median_ms": 10.392,
+      "median_ms": 10.96,
       "output_bytes": 18753
     },
     "vite/ripgrep/refs/createServer": {
-      "median_ms": 10.275,
+      "median_ms": 10.498,
       "output_bytes": 32049
     },
     "vite/ripgrep/refs/defineConfig": {
-      "median_ms": 10.515,
+      "median_ms": 11.589,
       "output_bytes": 28582
     },
     "vite/ripgrep/search/ViteDevServer": {
-      "median_ms": 10.077,
+      "median_ms": 11.347,
       "output_bytes": 1565
     },
     "vite/ripgrep/search/createServer": {
-      "median_ms": 10.475,
+      "median_ms": 10.499,
       "output_bytes": 2639
     },
     "vite/ripgrep/search/defineConfig": {
-      "median_ms": 10.281,
+      "median_ms": 10.703,
       "output_bytes": 5644
     },
     "vite/ripgrep/show/ViteDevServer": {
-      "median_ms": 10.351,
+      "median_ms": 10.538,
       "output_bytes": 17445
     },
     "vite/ripgrep/show/createServer": {
-      "median_ms": 10.556,
+      "median_ms": 10.89,
       "output_bytes": 0
     },
     "vite/ripgrep/show/defineConfig": {
-      "median_ms": 11.655,
+      "median_ms": 10.656,
       "output_bytes": 0
     }
   },
@@ -625,11 +625,11 @@
     "total": 69
   },
   "ground_truth": {
-    "passed": 41,
+    "passed": 43,
     "total": 43,
     "search_precision": 100,
     "search_recall": 100,
-    "refs_precision": 77.77777777777779,
+    "refs_precision": 100,
     "refs_recall": 100,
     "show_exact_rate": 100
   },

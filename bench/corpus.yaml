@@ -34,6 +34,14 @@ repos:
         ground_truth:
           search:
             exact: true
+            canonical:
+              file: "gin.go"
+              line: 583
+              kind: "method"
+            prefer_paths:
+              - "gin.go"
+            avoid_paths:
+              - "_test.go"
             expected:
               - file: "utils_test.go"
                 line: 31
@@ -92,6 +100,8 @@ repos:
           refs:
             expected:
               - file: "context_test.go"
+                line: 2393
+              - file: "context_test.go"
                 line: 2588
               - file: "response_writer_test.go"
                 line: 127
@@ -117,6 +127,8 @@ repos:
           refs:
             expected:
               - file: "context.go"
+                line: 117
+              - file: "context.go"
                 line: 1220
               - file: "context.go"
                 line: 1229
@@ -126,6 +138,14 @@ repos:
                 line: 1245
               - file: "context.go"
                 line: 1266
+              - file: "context_test.go"
+                line: 2423
+              - file: "context_test.go"
+                line: 2457
+              - file: "context_test.go"
+                line: 2652
+              - file: "gin.go"
+                line: 240
     footguns:
       - name: common_name_context
         symbol: Context
@@ -185,6 +205,12 @@ repos:
         ground_truth:
           search:
             exact: true
+            canonical:
+              file: "pkg/cmd/util/factory.go"
+              line: 41
+              kind: "interface"
+            prefer_paths:
+              - "pkg/cmd/util/"
             expected:
               - file: "pkg/cmd/util/factory.go"
                 line: 41
@@ -221,6 +247,15 @@ repos:
         ground_truth:
           search:
             exact: true
+            canonical:
+              file: "fastapi/applications.py"
+              line: 48
+              kind: "class"
+            prefer_paths:
+              - "fastapi/"
+            avoid_paths:
+              - "docs"
+              - "docs_src"
             expected:
               - file: "fastapi/applications.py"
                 line: 48
@@ -236,6 +271,14 @@ repos:
         ground_truth:
           search:
             exact: true
+            canonical:
+              file: "fastapi/params.py"
+              line: 764
+              kind: "class"
+            prefer_paths:
+              - "fastapi/params.py"
+            avoid_paths:
+              - "param_functions.py"
             expected:
               - file: "fastapi/params.py"
                 line: 764
@@ -290,6 +333,14 @@ repos:
         ground_truth:
           search:
             exact: true
+            canonical:
+              file: "packages/vite/src/node/server/index.ts"
+              line: 408
+              kind: "function"
+            prefer_paths:
+              - "packages/vite/src/node/"
+            avoid_paths:
+              - "playground/"
             expected:
               - file: "packages/vite/src/node/server/index.ts"
                 line: 408
@@ -383,6 +434,12 @@ repos:
         ground_truth:
           search:
             exact: true
+            canonical:
+              file: "crates/searcher/src/searcher/mod.rs"
+              line: 577
+              kind: "struct"
+            prefer_paths:
+              - "crates/searcher/src/searcher/"
             expected:
               - file: "crates/searcher/src/searcher/mod.rs"
                 line: 577
@@ -438,6 +495,15 @@ repos:
         ground_truth:
           search:
             exact: true
+            canonical:
+              file: "guava/src/com/google/common/collect/ImmutableList.java"
+              line: 63
+              kind: "class"
+            prefer_paths:
+              - "guava/src/"
+            avoid_paths:
+              - "android/"
+              - "guava-gwt/"
             expected:
               - file: "android/guava/src/com/google/common/collect/ImmutableList.java"
                 line: 59
@@ -468,6 +534,14 @@ repos:
         ground_truth:
           search:
             exact: true
+            canonical:
+              file: "guava/src/com/google/common/base/Preconditions.java"
+              line: 115
+              kind: "class"
+            prefer_paths:
+              - "guava/src/"
+            avoid_paths:
+              - "android/"
             expected:
               - file: "android/guava/src/com/google/common/base/Preconditions.java"
                 line: 115
@@ -494,6 +568,14 @@ repos:
         ground_truth:
           search:
             exact: true
+            canonical:
+              file: "guava/src/com/google/common/base/Optional.java"
+              line: 87
+              kind: "class"
+            prefer_paths:
+              - "guava/src/"
+            avoid_paths:
+              - "android/"
             expected:
               - file: "android/guava/src/com/google/common/base/Optional.java"
                 line: 87
