@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -708,12 +709,14 @@ func (s *Store) Structure(limit int) (*StructureResult, error) {
 
 // SearchSymbolsCI performs a case-insensitive exact name match.
 func (s *Store) SearchSymbolsCI(name string, limit int) ([]SymbolResult, error) {
+	// Over-fetch so ranking sees the full candidate set before truncating.
+	fetch := rankFetchWindow(limit)
 	rows, err := s.db.Query(`
 		SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
 		FROM symbols s JOIN files f ON s.file_id = f.id
 		WHERE s.name COLLATE NOCASE = ?
 		ORDER BY s.name LIMIT ?
-	`, name, limit)
+	`, name, fetch)
 	if err != nil {
 		return nil, err
 	}
@@ -727,13 +730,23 @@ func (s *Store) SearchSymbolsCI(name string, limit int) ([]SymbolResult, error) 
 		}
 		results = append(results, r)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	RankSymbols(results)
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
 }
 
 // SearchSymbols searches using FTS5 with ranking: exact > prefix > fuzzy.
 func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) ([]SymbolResult, error) {
 	var rows *sql.Rows
 	var err error
+
+	// Over-fetch so the ranking window covers enough candidates before truncating.
+	fetch := rankFetchWindow(limit)
 
 	if exact {
 		q := `SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
@@ -749,7 +762,7 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 			args = append(args, lang)
 		}
 		q += " ORDER BY s.name LIMIT ?"
-		args = append(args, limit)
+		args = append(args, fetch)
 		rows, err = s.db.Query(q, args...)
 	} else {
 		ftsQuery := query + "*"
@@ -773,7 +786,7 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 			     ELSE 2 END,
 			rank
 			LIMIT ?`
-		args = append(args, query, query, limit)
+		args = append(args, query, query, fetch)
 		rows, err = s.db.Query(q, args...)
 	}
 	if err != nil {
@@ -789,7 +802,47 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 		}
 		results = append(results, r)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// For exact queries all results share the same name — canonical ranking is
+	// safe. For FTS queries the SQL tier order (exact-name > prefix > fuzzy)
+	// must be preserved across different symbol names; apply canonical ranking
+	// only within each tier so test/playground results don't float above source
+	// results at the same tier.
+	if exact {
+		RankSymbols(results)
+	} else {
+		rankWithinFTSTiers(results, query)
+	}
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
+}
+
+// rankWithinFTSTiers preserves SQL tier order (exact-name > prefix > fuzzy)
+// while applying canonical path/kind scoring within each tier.
+func rankWithinFTSTiers(results []SymbolResult, query string) {
+	tier := func(name string) int {
+		n := strings.ToLower(name)
+		q := strings.ToLower(query)
+		switch {
+		case n == q:
+			return 0
+		case strings.HasPrefix(n, q):
+			return 1
+		default:
+			return 2
+		}
+	}
+	sort.SliceStable(results, func(i, j int) bool {
+		ti, tj := tier(results[i].Name), tier(results[j].Name)
+		if ti != tj {
+			return ti < tj
+		}
+		return SymbolScore(results[i]) > SymbolScore(results[j])
+	})
 }
 
 // FileSymbols returns all symbols in a given file.

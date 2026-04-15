@@ -44,7 +44,7 @@ Results are ranked: exact match > prefix > fuzzy.`,
 			return fmt.Errorf("no results found for '%s'", query)
 		}
 
-		rankSymbols(results)
+		index.RankSymbols(results)
 
 		var content strings.Builder
 		for _, r := range results {

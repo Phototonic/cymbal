@@ -15,6 +15,9 @@ var rootCmd = &cobra.Command{
 	Long: `Cymbal is a blazing-fast code indexer, parser, and symbol discovery CLI.
 It uses tree-sitter for multi-language AST parsing and SQLite for indexed storage,
 designed to be called by AI agents and developer tools.`,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		index.CloseAll()
+	},
 }
 
 // Execute runs the root command.

@@ -351,11 +351,10 @@ func Index(root, dbPath string, opts Options) (*Stats, error) {
 
 // Structure returns a structural overview of the codebase.
 func Structure(dbPath string, limit int) (*StructureResult, error) {
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.Structure(limit)
 }
 
@@ -508,11 +507,10 @@ func ListRepos() ([]Repo, error) {
 
 // FileOutline returns symbols for a file.
 func FileOutline(dbPath, filePath string) ([]SymbolResult, error) {
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.FileSymbols(filePath)
 }
 
@@ -521,21 +519,19 @@ func SearchSymbols(dbPath string, q SearchQuery) ([]SymbolResult, error) {
 	if q.Limit <= 0 {
 		q.Limit = 50
 	}
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.SearchSymbols(q.Text, q.Kind, q.Language, q.Exact, q.Limit)
 }
 
 // RepoStats returns overview statistics for the repo in the given database.
 func RepoStats(dbPath string) (*RepoStatsResult, error) {
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.RepoStats()
 }
 
@@ -611,11 +607,10 @@ func FindReferences(dbPath, name string, limit int) ([]RefResult, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.FindReferences(name, limit)
 }
 
@@ -624,11 +619,10 @@ func FindImporters(dbPath, symbolName string, depth, limit int) ([]ImporterResul
 	if limit <= 0 {
 		limit = 50
 	}
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.FindImporters(symbolName, depth, limit)
 }
 
@@ -637,11 +631,10 @@ func FindImportersByPath(dbPath, target string, depth, limit int) ([]ImporterRes
 	if limit <= 0 {
 		limit = 50
 	}
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.FindImportersByPath(target, depth, limit)
 }
 
@@ -656,11 +649,10 @@ type ContextResult struct {
 
 // SymbolContext returns bundled context for a symbol: source, type refs, callers, and file imports.
 func SymbolContext(dbPath, symbolName string, callerLimit int) (*ContextResult, error) {
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 
 	// Resolve symbol by exact name.
 	results, err := store.SearchSymbols(symbolName, "", "", true, 100)
@@ -740,11 +732,10 @@ type InvestigateOpts struct {
 }
 
 func Investigate(dbPath, symbolName string, opts ...InvestigateOpts) (*InvestigateResult, error) {
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 
 	results, err := store.SearchSymbols(symbolName, "", "", true, 100)
 	if err != nil {
@@ -804,11 +795,10 @@ func Investigate(dbPath, symbolName string, opts ...InvestigateOpts) (*Investiga
 // InvestigateResolved builds an InvestigateResult for a pre-resolved symbol.
 // Use when the caller already resolved the symbol (e.g., via flexResolve).
 func InvestigateResolved(dbPath string, sym SymbolResult) (*InvestigateResult, error) {
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 
 	// Cap source for large type symbols — members are listed separately.
 	const maxTypeLines = 60
@@ -854,11 +844,10 @@ func FindImpact(dbPath, symbolName string, depth, limit int) ([]ImpactResult, er
 	if limit <= 0 {
 		limit = 100
 	}
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.FindImpact(symbolName, depth, limit)
 }
 
@@ -867,22 +856,20 @@ func FindTrace(dbPath, symbolName string, depth, limit int) ([]TraceResult, erro
 	if limit <= 0 {
 		limit = 50
 	}
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.FindTrace(symbolName, depth, limit)
 }
 
 // SearchSymbolsFlex performs a flexible search: case-insensitive + prefix match.
 // Used as a fallback when exact name match returns no results.
 func SearchSymbolsFlex(dbPath, name string, limit int) ([]SymbolResult, error) {
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 
 	// Try case-insensitive exact match first.
 	results, err := store.SearchSymbolsCI(name, limit)
@@ -899,10 +886,9 @@ func SearchSymbolsFlex(dbPath, name string, limit int) ([]SymbolResult, error) {
 
 // SymbolsByName finds symbols by exact name (for show command).
 func SymbolsByName(dbPath, name string) ([]SymbolResult, error) {
-	store, err := OpenStore(dbPath)
+	store, err := openCached(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
 	return store.SearchSymbols(name, "", "", true, 100)
 }
