@@ -2,35 +2,40 @@
 
 All notable changes to cymbal are documented here.
 
-## [Unreleased]
+## [0.10.0] - 2025-04-15
 
-### Fixed
+### Highlights
 
-- **P3-A: EnsureFresh directory-mtime fast path** — `EnsureFresh` now records `last_index_ns` after each index run. On subsequent commands it walks only directories (skipping `.git`, `node_modules`, `vendor`, etc.) and checks their mtimes against the timestamp. If no directory is newer, the full file-walk and hash computation are skipped entirely — ~500 stats on a 10k-file repo instead of ~10k.
-- **P3-B: Improved signature extraction** — `extractSignature` now captures `return_type` nodes for Go, Python, and Rust. Python signatures show `-> ReturnType`. TypeScript/JS function signatures remain limited due to the tree-sitter grammar not exposing a `parameters` field on `function_declaration` — tracked for a future grammar-level fix.
-- **P2-A: Generated code ranking penalties** — symbols in `.pb.go`, `_generated.go`, `_gen.go`, `.gen.ts`, `_pb2.py`, `__generated__`, `.g.dart`, `/generated/`, `/gen/` paths receive a `-50` to `-70` ranking penalty so hand-written code ranks above generated boilerplate.
-- **P2-B: `refs --file <fragment>`** — restricts reference results to files whose path contains the given fragment; composable with `--path` and `--exclude`. Useful for scoping `refs Context` to files that actually import `context.go`.
-- **P2-C: `search --text` delegates to `rg` when available** — when ripgrep is on `PATH`, text search shells out to `rg --no-heading -n` in the repo root for full SIMD/mmap speed, then parses output into the standard `TextResult` format. Falls back to the pure-Go implementation when `rg` is absent. `langToRgType` maps cymbal language names to `rg --type` values.
-- **`index.RepoRootFromDB`** — new helper to read `repo_root` metadata without opening a fresh store handle.
-- **P1-A: `context` no longer errors on ambiguous symbols** — `SymbolContext` now ranks all candidates and picks the top result instead of returning `AmbiguousError`. The frontmatter shows `matches: N (also: file:line, ...)` so agents know alternatives exist. `ContextResult` gains `matches`, `match_count`, and `ambiguous` fields in JSON mode.
-- **P1-B: `--path` and `--exclude` filters on `search`, `refs`, `show`** — glob-based path inclusion/exclusion composable with all existing flags. Results are over-fetched from the DB when filters are active so the user limit is met after filtering, not before. Works across symbol search, text search, refs, importers, and show.
-- **P1-C: `show --all` and structured `also` in JSON** — `show` without `--all` still picks the top-ranked definition; `--all` emits every matched definition separated by blank lines. In JSON mode the response now includes `match_count` and `also: []SymbolResult` so agents can follow up on alternatives without string-parsing frontmatter.
-- **P0-A: Ranking before SQL LIMIT** — `SearchSymbols` and `SearchSymbolsCI` now over-fetch up to `min(limit×5, 500)` rows, apply full canonical ranking across the entire candidate window, then truncate to the user-requested limit. Previously, SQLite row order determined which results were visible; canonical definitions beyond the first N rows were silently dropped. FTS queries preserve exact-name > prefix > fuzzy tier order and apply canonical scoring within each tier.
-- **P0-B: DB open/close per query eliminated** — all 14 public index wrapper functions (`SearchSymbols`, `Investigate`, `SymbolContext`, `FindReferences`, `FindImpact`, `FindTrace`, etc.) now share a process-scoped store via `openCached`. Each unique `dbPath` is opened once and reused; `cmd/root.go` closes all handles on exit via `PersistentPostRun`. Previously, `investigate` opened the DB 5+ times; `context` more. Now: once per process. `EnsureFresh` retains its own short-lived store since it may trigger a write/reindex.
-- **Canonical definition ranking** — `search` and `show` now return the most relevant definition first. A new `symbolScore` ranker penalises test (`-80`), playground/example (`-70`), docs (`-60`), vendor (`-90`), and mirror-tree (`-50`) paths, while boosting well-known source roots (`/src/`, `/pkg/`, `/crates/`, `/packages/`). Kind priority, path depth, and path length serve as tiebreakers. Before: `show createServer` in Vite opened a playground copy; `search ImmutableList` in Guava ranked the android mirror first. After: canonical definitions rank #1 across all benchmark cases.
+**Canonical ranking** — `search` and `show` now return the most relevant definition first, not whatever SQLite happened to store first. A `symbolScore` ranker penalises test, playground, docs, vendor, generated-code, and mirror-tree paths while boosting well-known source roots. Before: `show createServer` in Vite opened a playground copy. After: the real implementation ranks #1 across all benchmark repos (100% canonical @1, 1.00 MRR).
+
+**Faster freshness checks** — `EnsureFresh` now checks directory mtimes before doing a full file walk. If nothing changed since the last index, the check completes in microseconds instead of hashing every file (~500 dir stats on a 10k-file repo instead of ~10k file hashes).
+
+**Process-scoped DB** — all queries in a single command invocation share one SQLite connection instead of opening and closing it per function call. `investigate` went from 5+ DB opens to 1.
 
 ### Added
 
-- **Ground-truth precision/recall benchmark** — the bench harness now validates cymbal output against curated expected-definition and expected-reference sets per symbol, computing true precision, recall, and F1 across `search`, `show`, and `refs` for every corpus repo.
-- **Canonical ranking hard-mode benchmark** — a dedicated evaluation phase that measures search@1 accuracy, MRR, and show-exactness against hand-picked canonical definitions, with a tuned-grep baseline for fair comparison. Regression gating prevents canonical-ranking regressions from passing CI.
-- **Grep footgun benchmark** — explicit test cases where common names (e.g. `Context` 915 grep hits → 5 cymbal results, `FastAPI` 11k → 8) prove cymbal's semantic advantage over text search. Measured per-repo with noise counts and pass/fail gates.
-- **Tuned-grep baseline** — the bench harness now runs a path-aware, word-boundary grep scorer as a credible expert-grep comparison, not just naive `rg`.
+- **`--path` and `--exclude` glob filters** on `search`, `refs`, and `show` — scope results to specific directories or exclude test/vendor/generated paths. Composable with `--kind`, `--lang`, `--exact`.
+- **`show --all`** — emit every matched definition, not just the top-ranked one. Useful when the agent needs to see all overloads or cross-module variants.
+- **`refs --file <fragment>`** — restrict reference results to files whose path contains the given fragment. Useful for scoping `refs Context` to files that actually import `context.go`.
+- **Structured `also` in JSON** — `show` and `context` JSON responses include `match_count` and `also: []SymbolResult` so agents can follow up on alternatives without string-parsing frontmatter.
+- **`search --text` delegates to `rg`** — when ripgrep is on `PATH`, text search shells out to `rg` for full SIMD/mmap speed. Falls back to the pure-Go implementation when `rg` is absent.
+- **Generated code ranking penalties** — symbols in `.pb.go`, `_generated.go`, `_gen.go`, `.gen.ts`, `_pb2.py`, `__generated__`, `.g.dart`, `/generated/`, `/gen/` paths are ranked below hand-written code.
+- **Ground-truth precision/recall benchmark** — the bench harness validates cymbal output against curated expected-definition and expected-reference sets per symbol across 7 corpus repos (43 checks, 100% pass rate).
+- **Canonical ranking hard-mode benchmark** — measures search@1 accuracy, MRR, and show-exactness against 9 hand-picked disambiguation cases with a tuned-grep baseline for fair comparison.
+- **Grep footgun benchmark** — explicit test cases proving cymbal's advantage on common names (e.g. `Context`: 915 grep hits → 5 cymbal results; `FastAPI`: 11k → 8).
+
+### Fixed
+
+- **`context` no longer errors on ambiguous symbols** — ranks all candidates and picks the top result instead of returning `AmbiguousError`. Output includes `matches: N` metadata so agents know alternatives exist.
+- **Ranking before SQL LIMIT** — search over-fetches a wider candidate window, applies canonical ranking, then truncates. Canonical definitions are never silently dropped by DB row order. Exact-match queries fetch all rows; FTS queries cap at `min(limit×5, 500)` while preserving exact > prefix > fuzzy tier order.
+- **Improved signature extraction** — `extractSignature` now captures `return_type` nodes for Go, Python, and Rust. Python signatures show `-> ReturnType`.
 
 ### Changed
 
-- **DRY output rendering** — extracted `renderJSONOrFrontmatter` and `formatImporterResults` into `cmd/render.go`, deduplicating the json-or-frontmatter output pattern across `importers`, `ls`, `outline`, `refs`, `search`, and `trace` commands.
-- **Removed unused `resolveSymbol` wrapper** from `cmd/output.go`.
-- **Benchmark corpus enriched** — all 7 corpus repos now carry tier/complexity/tags metadata, stronger per-op accuracy assertions (`search_contains`, `search_excludes`, `show_contains_all`, `refs_contains`, etc.), and full ground-truth specs with canonical/prefer_paths/avoid_paths for 9 hard-disambiguation cases.
+- **Process-scoped store pool** — all public index functions share a cached `*Store` per `dbPath` via `openCached`. `CloseAll()` is deferred in `main.go` so handles flush on both success and error paths.
+- **EnsureFresh directory-mtime fast path** — records `last_index_ns` after each index run. On subsequent commands, walks only directories (skipping `.git`, `node_modules`, `vendor`, etc.) and checks mtimes. If no directory is newer, skips the full file-walk entirely.
+- **DRY output rendering** — extracted shared `renderJSONOrFrontmatter` into `cmd/render.go`, deduplicating the json-or-frontmatter pattern across 6 commands.
+- **Benchmark corpus enriched** — all 7 corpus repos carry tier/complexity/tags metadata, full ground-truth specs, and 9 canonical disambiguation cases with prefer/avoid path annotations.
 
 ## [0.9.3] - 2026-04-14
 
