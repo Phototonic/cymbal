@@ -2,11 +2,11 @@
 
 All notable changes to cymbal are documented here.
 
-## [0.10.0] - 2025-04-15
+## [0.10.0] - 2026-04-15
 
 ### Highlights
 
-**Canonical ranking** — `search` and `show` now return the most relevant definition first, not whatever SQLite happened to store first. A `symbolScore` ranker penalises test, playground, docs, vendor, generated-code, and mirror-tree paths while boosting well-known source roots. Before: `show createServer` in Vite opened a playground copy. After: the real implementation ranks #1 across all benchmark repos (100% canonical @1, 1.00 MRR).
+**Canonical ranking** — `search` and `show` now return the most relevant definition first, not whatever SQLite happened to store first. A `SymbolScore` ranker penalises test, playground, docs, vendor, generated-code, and mirror-tree paths while boosting well-known source roots. Before: `show createServer` in Vite opened a playground copy. After: the real implementation ranks #1 across all benchmark repos (100% canonical @1, 1.00 MRR).
 
 **Faster freshness checks** — `EnsureFresh` now checks directory mtimes before doing a full file walk. If nothing changed since the last index, the check completes in microseconds instead of hashing every file (~500 dir stats on a 10k-file repo instead of ~10k file hashes).
 
@@ -17,7 +17,7 @@ All notable changes to cymbal are documented here.
 - **`--path` and `--exclude` glob filters** on `search`, `refs`, and `show` — scope results to specific directories or exclude test/vendor/generated paths. Composable with `--kind`, `--lang`, `--exact`.
 - **`show --all`** — emit every matched definition, not just the top-ranked one. Useful when the agent needs to see all overloads or cross-module variants.
 - **`refs --file <fragment>`** — restrict reference results to files whose path contains the given fragment. Useful for scoping `refs Context` to files that actually import `context.go`.
-- **Structured `also` in JSON** — `show` and `context` JSON responses include `match_count` and `also: []SymbolResult` so agents can follow up on alternatives without string-parsing frontmatter.
+- **Structured alternatives in JSON** — `show` JSON responses include `match_count` and `also: []SymbolResult`; `context` JSON responses include `match_count` and `matches: []SymbolResult`. Agents can follow up on alternatives without string-parsing frontmatter.
 - **`search --text` delegates to `rg`** — when ripgrep is on `PATH`, text search shells out to `rg` for full SIMD/mmap speed. Falls back to the pure-Go implementation when `rg` is absent.
 - **Generated code ranking penalties** — symbols in `.pb.go`, `_generated.go`, `_gen.go`, `.gen.ts`, `_pb2.py`, `__generated__`, `.g.dart`, `/generated/`, `/gen/` paths are ranked below hand-written code.
 - **Ground-truth precision/recall benchmark** — the bench harness validates cymbal output against curated expected-definition and expected-reference sets per symbol across 7 corpus repos (43 checks, 100% pass rate).
@@ -27,8 +27,12 @@ All notable changes to cymbal are documented here.
 ### Fixed
 
 - **`context` no longer errors on ambiguous symbols** — ranks all candidates and picks the top result instead of returning `AmbiguousError`. Output includes `matches: N` metadata so agents know alternatives exist.
-- **Ranking before SQL LIMIT** — search over-fetches a wider candidate window, applies canonical ranking, then truncates. Canonical definitions are never silently dropped by DB row order. Exact-match queries fetch all rows; FTS queries cap at `min(limit×5, 500)` while preserving exact > prefix > fuzzy tier order.
-- **Improved signature extraction** — `extractSignature` now captures `return_type` nodes for Go, Python, and Rust. Python signatures show `-> ReturnType`.
+- **Ranking before SQL LIMIT** — search over-fetches a wider candidate window, applies canonical ranking, then truncates. Canonical definitions are never silently dropped by DB row order. Exact-match queries fetch all rows (candidate set is inherently bounded); FTS queries over-fetch `min(limit×5, 500)` rows and rank within tier boundaries (exact > prefix > fuzzy).
+- **Improved signature extraction** — `extractSignature` now captures `return_type` nodes for Go, Python, Rust, and TypeScript/JavaScript. Python signatures show `-> ReturnType`.
+
+### Breaking (library API)
+
+- **`index.SymbolContext` no longer returns `*AmbiguousError`** — it ranks all candidates and returns the top match. Callers that checked for `AmbiguousError` should instead inspect `ContextResult.MatchCount` and `ContextResult.Matches`.
 
 ### Changed
 
@@ -37,7 +41,7 @@ All notable changes to cymbal are documented here.
 - **DRY output rendering** — extracted shared `renderJSONOrFrontmatter` into `cmd/render.go`, deduplicating the json-or-frontmatter pattern across 6 commands.
 - **Benchmark corpus enriched** — all 7 corpus repos carry tier/complexity/tags metadata, full ground-truth specs, and 9 canonical disambiguation cases with prefer/avoid path annotations.
 
-## [0.9.3] - 2026-04-14
+## [0.9.3] - 2025-04-14
 
 ### Added
 

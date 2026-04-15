@@ -123,10 +123,10 @@ The index auto-builds on first use — no manual `cymbal index .` required. Subs
 | `trace` | Downward call graph — what does this symbol call? |
 | `index` | Parse and index a directory |
 | `ls` | File tree, repo list, or `--stats` overview |
-| `search` | Symbol search (or `--text` for grep) |
-| `show` | Display a symbol's source code |
+| `search` | Symbol search (or `--text` for grep). Supports `--path`, `--exclude` |
+| `show` | Display a symbol's source code. `--all` for every match |
 | `outline` | List all symbols in a file |
-| `refs` | Find references / call sites |
+| `refs` | Find references / call sites. `--file` to scope by path |
 | `importers` | Reverse import lookup — who imports this? |
 | `impact` | Transitive callers — what's affected by a change? |
 | `diff` | Git diff scoped to a symbol's line range |
@@ -153,7 +153,9 @@ Use `cymbal` CLI for code navigation — prefer it over Read, Grep, Glob, or Bas
 - **To trace an execution path**: `cymbal trace <symbol>` — follows the call graph downward (what does X call, what do those call).
 - **To assess change risk**: `cymbal impact <symbol>` — follows the call graph upward (what breaks if X changes).
 - Before reading a file: `cymbal outline <file>` or `cymbal show <file:L1-L2>`
-- Before searching: `cymbal search <query>` (symbols) or `cymbal search <query> --text` (grep)
+- Before searching: `cymbal search <query>` (symbols) or `cymbal search <query> --text` (grep, delegates to rg when available)
+- To filter results: `cymbal search --path 'src/*' --exclude '*_test.go' <query>`
+- To see all definitions: `cymbal show --all <symbol>` or `cymbal refs --file context.go <symbol>`
 - Before exploring structure: `cymbal ls` (tree) or `cymbal ls --stats` (overview)
 - To disambiguate: `cymbal show path/to/file.go:SymbolName` or `cymbal investigate file.go:Symbol`
 - The index auto-builds on first use — no manual indexing step needed. Queries auto-refresh incrementally.
@@ -241,9 +243,9 @@ go run ./bench run     # run all benchmarks → bench/RESULTS.md
 
 **Speed** — cymbal queries complete in 9-27ms. Reindex with nothing changed: 8-20ms.
 
-**Accuracy** — 100% automated ground-truth verification across 37 checks (search returns correct file+kind, show returns correct source, refs finds known callers, investigate includes expected signature).
+**Accuracy** — 100% ground-truth precision/recall across 43 checks. 100% canonical @1 ranking across 9 hard disambiguation cases. 7/7 grep-footgun avoidance tests pass.
 
-**Token efficiency** — for targeted lookups, cymbal uses 17-100% fewer tokens than ripgrep. Refs queries show the biggest wins (3-100% savings) because cymbal returns semantic call sites, not every line mentioning the string.
+**Token efficiency** — for targeted lookups, cymbal uses 17-100% fewer tokens than ripgrep (`FastAPI`: 11k grep hits → 8 cymbal results; `Context`: 915 → 5). Refs queries show the biggest wins because cymbal returns semantic call sites, not every line mentioning the string.
 
 **JIT freshness** — queries auto-detect and reparse changed files. Overhead: ~10-23ms when nothing changed, ~22-27ms after touching 1 file, ~33-43ms after touching 5 files. Deleted files are automatically pruned.
 

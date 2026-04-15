@@ -3,7 +3,7 @@ package index
 import "sync"
 
 // Process-scoped store cache. Each unique dbPath is opened once and reused
-// for the lifetime of the process. Call CloseAll in cobra PersistentPostRun.
+// for the lifetime of the process. CloseAll is deferred in main().
 var (
 	poolMu    sync.Mutex
 	poolCache = map[string]*Store{}
