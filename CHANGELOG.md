@@ -6,6 +6,8 @@ All notable changes to cymbal are documented here.
 
 ### Fixed
 
+- **P0-A: Ranking before SQL LIMIT** — `SearchSymbols` and `SearchSymbolsCI` now over-fetch up to `min(limit×5, 500)` rows, apply full canonical ranking across the entire candidate window, then truncate to the user-requested limit. Previously, SQLite row order determined which results were visible; canonical definitions beyond the first N rows were silently dropped. FTS queries preserve exact-name > prefix > fuzzy tier order and apply canonical scoring within each tier.
+- **P0-B: DB open/close per query eliminated** — all 14 public index wrapper functions (`SearchSymbols`, `Investigate`, `SymbolContext`, `FindReferences`, `FindImpact`, `FindTrace`, etc.) now share a process-scoped store via `openCached`. Each unique `dbPath` is opened once and reused; `cmd/root.go` closes all handles on exit via `PersistentPostRun`. Previously, `investigate` opened the DB 5+ times; `context` more. Now: once per process. `EnsureFresh` retains its own short-lived store since it may trigger a write/reindex.
 - **Canonical definition ranking** — `search` and `show` now return the most relevant definition first. A new `symbolScore` ranker penalises test (`-80`), playground/example (`-70`), docs (`-60`), vendor (`-90`), and mirror-tree (`-50`) paths, while boosting well-known source roots (`/src/`, `/pkg/`, `/crates/`, `/packages/`). Kind priority, path depth, and path length serve as tiebreakers. Before: `show createServer` in Vite opened a playground copy; `search ImmutableList` in Guava ranked the android mirror first. After: canonical definitions rank #1 across all benchmark cases.
 
 ### Added
