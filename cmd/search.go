@@ -32,8 +32,9 @@ Results are ranked: exact match > prefix > fuzzy.`,
 		exported, _ := cmd.Flags().GetBool("exported")
 		hasFilters := len(includes) > 0 || len(excludes) > 0
 
-		if exported {
-			visFilter = "public"
+		parsedVisibility, err := parseVisibilityFilter(visFilter, exported)
+		if err != nil {
+			return err
 		}
 
 		if textMode {
@@ -46,7 +47,7 @@ Results are ranked: exact match > prefix > fuzzy.`,
 			Language:   lang,
 			Exact:      exact,
 			Limit:      widenPathFilterLimit(limit, hasFilters),
-			Visibility: visFilter,
+			Visibility: parsedVisibility,
 		})
 		if err != nil {
 			return err
@@ -92,6 +93,28 @@ func init() {
 	searchCmd.Flags().String("visibility", "", "filter by visibility: public, private, protected, internal")
 	searchCmd.Flags().Bool("exported", false, "shorthand for --visibility=public")
 	rootCmd.AddCommand(searchCmd)
+}
+
+func parseVisibilityFilter(raw string, exported bool) (string, error) {
+	vis := strings.ToLower(strings.TrimSpace(raw))
+
+	if exported {
+		if vis != "" && vis != "public" {
+			return "", fmt.Errorf("conflicting visibility filters: --exported requires --visibility to be empty or 'public'")
+		}
+		return "public", nil
+	}
+
+	if vis == "" {
+		return "", nil
+	}
+
+	switch vis {
+	case "public", "private", "protected", "internal":
+		return vis, nil
+	default:
+		return "", fmt.Errorf("invalid --visibility value %q (expected: public, private, protected, internal)", raw)
+	}
 }
 
 func searchText(dbPath, query, lang string, limit int, jsonOut bool, includes, excludes []string) error {

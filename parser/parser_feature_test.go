@@ -1918,8 +1918,8 @@ pub(crate) fn crate_func() {}
 	if crateFunc == nil {
 		t.Fatal("expected crate_func")
 	}
-	if crateFunc.Visibility != "public" {
-		t.Errorf("crate_func: expected visibility=public (pub(crate) is a pub variant), got %q", crateFunc.Visibility)
+	if crateFunc.Visibility != "internal" {
+		t.Errorf("crate_func: expected visibility=internal (crate-scoped), got %q", crateFunc.Visibility)
 	}
 }
 
@@ -1970,11 +1970,13 @@ func TestFeatureJavaVisibility(t *testing.T) {
 }
 
 func TestFeatureKotlinVisibility(t *testing.T) {
-	src := []byte(`fun defaultPublicFunc() {}
-public fun explicitPublicFunc() {}
-private fun privateFunc() {}
-protected fun protectedFunc() {}
-internal fun internalFunc() {}
+	src := []byte(`class VisibilityHost {
+    fun defaultPublicFunc() {}
+    public fun explicitPublicFunc() {}
+    private fun privateFunc() {}
+    protected fun protectedFunc() {}
+    internal fun internalFunc() {}
+}
 `)
 	result, err := ParseSource(src, "test.kt", "kotlin", lang.Default.TreeSitter("kotlin"))
 	if err != nil {
@@ -1989,12 +1991,28 @@ internal fun internalFunc() {}
 		t.Errorf("defaultPublicFunc: expected visibility=public (Kotlin default), got %q", def.Visibility)
 	}
 
+	explicitPub := findSymbol(result.Symbols, "explicitPublicFunc")
+	if explicitPub == nil {
+		t.Fatal("expected explicitPublicFunc")
+	}
+	if explicitPub.Visibility != "public" {
+		t.Errorf("explicitPublicFunc: expected visibility=public, got %q", explicitPub.Visibility)
+	}
+
 	priv := findSymbol(result.Symbols, "privateFunc")
 	if priv == nil {
 		t.Fatal("expected privateFunc")
 	}
 	if priv.Visibility != "private" {
 		t.Errorf("privateFunc: expected visibility=private, got %q", priv.Visibility)
+	}
+
+	prot := findSymbol(result.Symbols, "protectedFunc")
+	if prot == nil {
+		t.Fatal("expected protectedFunc")
+	}
+	if prot.Visibility != "protected" {
+		t.Errorf("protectedFunc: expected visibility=protected, got %q", prot.Visibility)
 	}
 
 	internal := findSymbol(result.Symbols, "internalFunc")
@@ -2075,24 +2093,129 @@ end
 		t.Fatal(err)
 	}
 
-	// Find functions by checking which function symbols have the expected visibility.
-	var pubFunc, privFunc *symbols.Symbol
-	for i := range result.Symbols {
-		s := &result.Symbols[i]
-		if s.Kind == "function" {
-			if s.Visibility == "public" {
-				pubFunc = s
-			} else if s.Visibility == "private" {
-				privFunc = s
-			}
-		}
+	pubFunc := findSymbol(result.Symbols, "public_func(x)")
+	if pubFunc == nil {
+		t.Fatal("expected public function symbol 'public_func(x)'")
+	}
+	if pubFunc.Visibility != "public" {
+		t.Errorf("public_func(x): expected visibility=public, got %q", pubFunc.Visibility)
 	}
 
-	if pubFunc == nil {
-		t.Fatal("expected a public function (def ...)")
-	}
+	privFunc := findSymbol(result.Symbols, "private_func(x)")
 	if privFunc == nil {
-		t.Fatal("expected a private function (defp ...)")
+		t.Fatal("expected private function symbol 'private_func(x)'")
+	}
+	if privFunc.Visibility != "private" {
+		t.Errorf("private_func(x): expected visibility=private, got %q", privFunc.Visibility)
+	}
+}
+
+func TestFeatureScalaVisibility(t *testing.T) {
+	src := []byte(`class MyClass {
+  def defaultMethod(): Int = 1
+  public def publicMethod(): Int = 2
+  protected def protectedMethod(): Int = 3
+  private def privateMethod(): Int = 4
+}
+`)
+	result, err := ParseSource(src, "test.scala", "scala", lang.Default.TreeSitter("scala"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.Symbols) != 0 {
+		debugParseResult(t, result)
+		t.Fatalf("expected no scala symbols with current classifier coverage, got %d", len(result.Symbols))
+	}
+}
+
+func TestFeatureApexVisibility(t *testing.T) {
+	src := []byte(`public class AccountService {
+    public static void publicMethod() {}
+    global static void globalMethod() {}
+    protected static void protectedMethod() {}
+    private static void privateMethod() {}
+}
+`)
+	result, err := ParseSource(src, "AccountService.cls", "apex", lang.Default.TreeSitter("apex"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pub := findSymbol(result.Symbols, "publicMethod")
+	if pub == nil {
+		t.Fatal("expected publicMethod")
+	}
+	if pub.Visibility != "public" {
+		t.Errorf("publicMethod: expected visibility=public, got %q", pub.Visibility)
+	}
+
+	glob := findSymbol(result.Symbols, "globalMethod")
+	if glob == nil {
+		t.Fatal("expected globalMethod")
+	}
+	if glob.Visibility != "public" {
+		t.Errorf("globalMethod: expected visibility=public, got %q", glob.Visibility)
+	}
+
+	prot := findSymbol(result.Symbols, "protectedMethod")
+	if prot == nil {
+		t.Fatal("expected protectedMethod")
+	}
+	if prot.Visibility != "protected" {
+		t.Errorf("protectedMethod: expected visibility=protected, got %q", prot.Visibility)
+	}
+
+	priv := findSymbol(result.Symbols, "privateMethod")
+	if priv == nil {
+		t.Fatal("expected privateMethod")
+	}
+	if priv.Visibility != "private" {
+		t.Errorf("privateMethod: expected visibility=private, got %q", priv.Visibility)
+	}
+}
+
+func TestFeatureRustScopedVisibility(t *testing.T) {
+	src := []byte(`pub fn open_to_all() {}
+pub(crate) fn crate_only() {}
+pub(super) fn super_only() {}
+pub(self) fn self_only() {}
+`)
+	result, err := ParseSource(src, "test.rs", "rust", lang.Default.TreeSitter("rust"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	open := findSymbol(result.Symbols, "open_to_all")
+	if open == nil {
+		t.Fatal("expected open_to_all")
+	}
+	if open.Visibility != "public" {
+		t.Errorf("open_to_all: expected visibility=public, got %q", open.Visibility)
+	}
+
+	crateOnly := findSymbol(result.Symbols, "crate_only")
+	if crateOnly == nil {
+		t.Fatal("expected crate_only")
+	}
+	if crateOnly.Visibility != "internal" {
+		t.Errorf("crate_only: expected visibility=internal, got %q", crateOnly.Visibility)
+	}
+
+	superOnly := findSymbol(result.Symbols, "super_only")
+	if superOnly == nil {
+		t.Fatal("expected super_only")
+	}
+	if superOnly.Visibility != "internal" {
+		t.Errorf("super_only: expected visibility=internal, got %q", superOnly.Visibility)
+	}
+
+	selfOnly := findSymbol(result.Symbols, "self_only")
+	if selfOnly == nil {
+		t.Fatal("expected self_only")
+	}
+	if selfOnly.Visibility != "private" {
+		t.Errorf("self_only: expected visibility=private, got %q", selfOnly.Visibility)
 	}
 }
 

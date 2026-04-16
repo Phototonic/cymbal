@@ -567,9 +567,13 @@ func (e *symbolExtractor) determineVisibility(node *sitter.Node, nameNode *sitte
 	case "javascript", "typescript":
 		return e.visibilityJS(node)
 	case "rust":
-		return visibilityRust(node)
-	case "apex", "java", "scala":
+		return visibilityRust(node, e.src)
+	case "java":
 		return visibilityJavaLike(node, e.src)
+	case "scala":
+		return visibilityScala(node, e.src)
+	case "apex":
+		return visibilityApex(node, e.src)
 	case "kotlin":
 		return visibilityKotlin(node, e.src)
 	case "python":
@@ -619,11 +623,26 @@ func (e *symbolExtractor) visibilityJS(node *sitter.Node) string {
 	return "private"
 }
 
-// visibilityRust returns "public" if node has a visibility_modifier child with "pub", "private" otherwise.
-func visibilityRust(node *sitter.Node) string {
+// visibilityRust maps Rust visibility modifiers:
+// - pub => public
+// - pub(crate|super|in ...) => internal
+// - pub(self) => private
+// - no modifier => private
+func visibilityRust(node *sitter.Node, src []byte) string {
 	for i := range int(node.ChildCount()) {
 		c := node.Child(i)
 		if c.Type() == "visibility_modifier" {
+			v := strings.TrimSpace(c.Content(src))
+			if v == "pub" {
+				return "public"
+			}
+			if strings.HasPrefix(v, "pub(") && strings.HasSuffix(v, ")") {
+				inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(v, "pub("), ")"))
+				if inner == "self" {
+					return "private"
+				}
+				return "internal"
+			}
 			return "public"
 		}
 	}
@@ -633,22 +652,59 @@ func visibilityRust(node *sitter.Node) string {
 // visibilityJavaLike returns the Java/Scala/Apex visibility from modifier nodes.
 // Default (no modifier) is package-private → "internal".
 func visibilityJavaLike(node *sitter.Node, src []byte) string {
+	mods := collectModifierKeywords(node, src)
+	return visibilityFromModifierKeywords(mods, "internal", false)
+}
+
+// visibilityScala defaults to public when no explicit modifier is present.
+func visibilityScala(node *sitter.Node, src []byte) string {
+	mods := collectModifierKeywords(node, src)
+	return visibilityFromModifierKeywords(mods, "public", false)
+}
+
+// visibilityApex treats global/public as public API-level visibility.
+func visibilityApex(node *sitter.Node, src []byte) string {
+	mods := collectModifierKeywords(node, src)
+	return visibilityFromModifierKeywords(mods, "internal", true)
+}
+
+func collectModifierKeywords(node *sitter.Node, src []byte) []string {
 	mods := findChildByType(node, "modifiers")
 	if mods == nil {
-		return "internal" // package-private default
+		return nil
 	}
+	keywords := make([]string, 0, int(mods.ChildCount()))
 	for i := range int(mods.ChildCount()) {
 		c := mods.Child(i)
-		switch c.Content(src) {
+		k := strings.ToLower(strings.TrimSpace(c.Content(src)))
+		if k != "" {
+			keywords = append(keywords, k)
+		}
+	}
+	return keywords
+}
+
+func visibilityFromModifierKeywords(keywords []string, defaultVisibility string, allowGlobal bool) string {
+	if len(keywords) == 0 {
+		return defaultVisibility
+	}
+	for _, k := range keywords {
+		switch k {
 		case "public":
 			return "public"
 		case "private":
 			return "private"
 		case "protected":
 			return "protected"
+		case "internal":
+			return "internal"
+		case "global":
+			if allowGlobal {
+				return "public"
+			}
 		}
 	}
-	return "internal"
+	return defaultVisibility
 }
 
 // visibilityKotlin returns the Kotlin visibility from modifier nodes.

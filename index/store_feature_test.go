@@ -154,6 +154,63 @@ func TestFeatureStoreLanguageFilter(t *testing.T) {
 	}
 }
 
+func TestFeatureStoreVisibilityFilterExactAndFTS(t *testing.T) {
+	store, _ := newTestStore(t)
+	now := time.Now()
+
+	fid, err := store.UpsertFile("/repo/vis.go", "vis.go", "go", "hash-vis", now, 123)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = store.InsertSymbols(fid, []symbols.Symbol{
+		{Name: "CommonThing", Kind: "function", File: "/repo/vis.go", StartLine: 1, EndLine: 1, Language: "go", Visibility: "public"},
+		{Name: "CommonThing", Kind: "function", File: "/repo/vis.go", StartLine: 2, EndLine: 2, Language: "go", Visibility: "private"},
+		{Name: "CommonWorker", Kind: "function", File: "/repo/vis.go", StartLine: 3, EndLine: 3, Language: "go", Visibility: "public"},
+		{Name: "CommonHidden", Kind: "function", File: "/repo/vis.go", StartLine: 4, EndLine: 4, Language: "go", Visibility: "private"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Exact path
+	exactPublic, err := store.SearchSymbols("CommonThing", "", "", true, 50, "public")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exactPublic) != 1 {
+		t.Fatalf("expected 1 exact public result, got %d", len(exactPublic))
+	}
+	if exactPublic[0].Visibility != "public" {
+		t.Fatalf("expected visibility=public, got %q", exactPublic[0].Visibility)
+	}
+
+	exactPrivate, err := store.SearchSymbols("CommonThing", "", "", true, 50, "private")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exactPrivate) != 1 {
+		t.Fatalf("expected 1 exact private result, got %d", len(exactPrivate))
+	}
+	if exactPrivate[0].Visibility != "private" {
+		t.Fatalf("expected visibility=private, got %q", exactPrivate[0].Visibility)
+	}
+
+	// FTS path
+	ftsPublic, err := store.SearchSymbols("Common", "", "", false, 50, "public")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ftsPublic) == 0 {
+		t.Fatal("expected at least one FTS public result")
+	}
+	for _, r := range ftsPublic {
+		if r.Visibility != "public" {
+			t.Fatalf("expected only public results in FTS filter, got %q for %s", r.Visibility, r.Name)
+		}
+	}
+}
+
 func TestFeatureStoreCaseInsensitiveSearch(t *testing.T) {
 	store, _ := newTestStore(t)
 	insertTestSymbols(t, store)
