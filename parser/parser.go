@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode"
 
 	sitter "github.com/smacker/go-tree-sitter"
 
@@ -539,20 +540,176 @@ func (e *symbolExtractor) nodeToSymbol(node *sitter.Node, parent string, depth i
 	}
 
 	sig := e.extractSignature(node, kind)
+	vis := e.determineVisibility(node, nameNode, name, kind)
 
 	return symbols.Symbol{
-		Name:      name,
-		Kind:      kind,
-		File:      e.filePath,
-		StartLine: int(node.StartPoint().Row) + 1,
-		EndLine:   int(node.EndPoint().Row) + 1,
-		StartCol:  int(node.StartPoint().Column),
-		EndCol:    int(node.EndPoint().Column),
-		Parent:    parent,
-		Depth:     depth,
-		Signature: sig,
-		Language:  e.lang,
+		Name:       name,
+		Kind:       kind,
+		File:       e.filePath,
+		StartLine:  int(node.StartPoint().Row) + 1,
+		EndLine:    int(node.EndPoint().Row) + 1,
+		StartCol:   int(node.StartPoint().Column),
+		EndCol:     int(node.EndPoint().Column),
+		Parent:     parent,
+		Depth:      depth,
+		Signature:  sig,
+		Language:   e.lang,
+		Visibility: vis,
 	}, true
+}
+
+// determineVisibility returns the visibility of a symbol based on language-specific rules.
+// Returns one of: "public", "private", "protected", "internal", or "" (unknown).
+func (e *symbolExtractor) determineVisibility(node *sitter.Node, nameNode *sitter.Node, name, kind string) string {
+	switch e.lang {
+	case "go":
+		return visibilityGo(name)
+	case "javascript", "typescript":
+		return e.visibilityJS(node)
+	case "rust":
+		return visibilityRust(node)
+	case "apex", "java", "scala":
+		return visibilityJavaLike(node, e.src)
+	case "kotlin":
+		return visibilityKotlin(node, e.src)
+	case "python":
+		return visibilityPython(name)
+	case "elixir":
+		return visibilityElixir(node, e.src)
+	case "dart":
+		return visibilityDart(name)
+	case "ruby":
+		// Ruby visibility is section-based and hard to determine statically;
+		// methods are public by default.
+		return "public"
+	default:
+		return ""
+	}
+}
+
+// visibilityGo returns "public" if the name starts with an uppercase letter, "private" otherwise.
+func visibilityGo(name string) string {
+	if name == "" {
+		return ""
+	}
+	r := []rune(name)
+	if unicode.IsUpper(r[0]) {
+		return "public"
+	}
+	return "private"
+}
+
+// visibilityJS returns "public" if the node is an export_statement (or child of one), "private" otherwise.
+func (e *symbolExtractor) visibilityJS(node *sitter.Node) string {
+	p := node.Parent()
+	if p != nil && p.Type() == "export_statement" {
+		return "public"
+	}
+	// lexical_declaration inside export_statement
+	if p != nil {
+		gp := p.Parent()
+		if gp != nil && gp.Type() == "export_statement" {
+			return "public"
+		}
+	}
+	// export_statement itself (e.g. when classifyJS dispatched via export_statement case)
+	if node.Type() == "export_statement" {
+		return "public"
+	}
+	return "private"
+}
+
+// visibilityRust returns "public" if node has a visibility_modifier child with "pub", "private" otherwise.
+func visibilityRust(node *sitter.Node) string {
+	for i := range int(node.ChildCount()) {
+		c := node.Child(i)
+		if c.Type() == "visibility_modifier" {
+			return "public"
+		}
+	}
+	return "private"
+}
+
+// visibilityJavaLike returns the Java/Scala/Apex visibility from modifier nodes.
+// Default (no modifier) is package-private → "internal".
+func visibilityJavaLike(node *sitter.Node, src []byte) string {
+	mods := findChildByType(node, "modifiers")
+	if mods == nil {
+		return "internal" // package-private default
+	}
+	for i := range int(mods.ChildCount()) {
+		c := mods.Child(i)
+		switch c.Content(src) {
+		case "public":
+			return "public"
+		case "private":
+			return "private"
+		case "protected":
+			return "protected"
+		}
+	}
+	return "internal"
+}
+
+// visibilityKotlin returns the Kotlin visibility from modifier nodes.
+// Default is "public" in Kotlin.
+func visibilityKotlin(node *sitter.Node, src []byte) string {
+	mods := findChildByType(node, "modifiers")
+	if mods == nil {
+		return "public" // Kotlin default
+	}
+	for i := range int(mods.ChildCount()) {
+		c := mods.Child(i)
+		if c.Type() == "visibility_modifier" {
+			switch c.Content(src) {
+			case "public":
+				return "public"
+			case "private":
+				return "private"
+			case "protected":
+				return "protected"
+			case "internal":
+				return "internal"
+			}
+		}
+	}
+	return "public" // Kotlin default
+}
+
+// visibilityPython returns "private" if name starts with "_", "public" otherwise.
+func visibilityPython(name string) string {
+	if name == "" {
+		return ""
+	}
+	if name[0] == '_' {
+		return "private"
+	}
+	return "public"
+}
+
+// visibilityElixir returns "private" for defp/defmacrop, "public" for def/defmodule/defmacro/defprotocol.
+func visibilityElixir(node *sitter.Node, src []byte) string {
+	first := node.Child(0)
+	if first == nil || first.Type() != "identifier" {
+		return "public"
+	}
+	switch first.Content(src) {
+	case "defp", "defmacrop":
+		return "private"
+	default:
+		return "public"
+	}
+}
+
+// visibilityDart returns "private" if name starts with "_", "public" otherwise.
+func visibilityDart(name string) string {
+	if name == "" {
+		return ""
+	}
+	if name[0] == '_' {
+		return "private"
+	}
+	return "public"
 }
 
 func (e *symbolExtractor) classifyNode(nodeType string, node *sitter.Node) (string, *sitter.Node) {
@@ -630,14 +787,7 @@ func (e *symbolExtractor) classifyPython(nodeType string, node *sitter.Node) (st
 		if node.Parent() != nil && node.Parent().Type() == "decorated_definition" {
 			return "", nil
 		}
-		nameNode := node.ChildByFieldName("name")
-		if nameNode != nil {
-			name := nameNode.Content(e.src)
-			if len(name) > 0 && name[0] == '_' && name != "__init__" {
-				return "", nil
-			}
-		}
-		return "function", nameNode
+		return "function", node.ChildByFieldName("name")
 	case "class_definition":
 		// Skip if parent is decorated_definition — the parent already emits this symbol.
 		if node.Parent() != nil && node.Parent().Type() == "decorated_definition" {
@@ -661,14 +811,7 @@ func (e *symbolExtractor) classifyPython(nodeType string, node *sitter.Node) (st
 func (e *symbolExtractor) classifyPythonInner(nodeType string, node *sitter.Node) (string, *sitter.Node) {
 	switch nodeType {
 	case "function_definition":
-		nameNode := node.ChildByFieldName("name")
-		if nameNode != nil {
-			name := nameNode.Content(e.src)
-			if len(name) > 0 && name[0] == '_' && name != "__init__" {
-				return "", nil
-			}
-		}
-		return "function", nameNode
+		return "function", node.ChildByFieldName("name")
 	case "class_definition":
 		return "class", node.ChildByFieldName("name")
 	}

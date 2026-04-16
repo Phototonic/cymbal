@@ -365,7 +365,7 @@ class Dog(Animal):
 	}
 }
 
-func TestFeaturePythonPrivateSkipped(t *testing.T) {
+func TestFeaturePythonPrivateIncludedAsPrivate(t *testing.T) {
 	src := []byte(`def public_func():
     pass
 
@@ -384,15 +384,24 @@ def __very_private():
 	if pub == nil {
 		t.Fatal("expected to find public_func")
 	}
+	if pub.Visibility != "public" {
+		t.Errorf("expected public_func visibility=public, got %q", pub.Visibility)
+	}
 
 	priv := findSymbol(result.Symbols, "_private_func")
-	if priv != nil {
-		t.Error("expected _private_func to be skipped")
+	if priv == nil {
+		t.Fatal("expected _private_func to be included (with visibility=private)")
+	}
+	if priv.Visibility != "private" {
+		t.Errorf("expected _private_func visibility=private, got %q", priv.Visibility)
 	}
 
 	vpriv := findSymbol(result.Symbols, "__very_private")
-	if vpriv != nil {
-		t.Error("expected __very_private to be skipped")
+	if vpriv == nil {
+		t.Fatal("expected __very_private to be included (with visibility=private)")
+	}
+	if vpriv.Visibility != "private" {
+		t.Errorf("expected __very_private visibility=private, got %q", vpriv.Visibility)
 	}
 }
 
@@ -1733,5 +1742,384 @@ func TestFeatureJSNewExpressionMemberRef(t *testing.T) {
 	if ref == nil {
 		debugParseResult(t, result)
 		t.Fatal("expected to find Server ref from new member expression")
+	}
+}
+
+// --- Visibility Tests ---
+
+func TestFeatureGoVisibility(t *testing.T) {
+	src := []byte(`package main
+
+func ExportedFunc() {}
+func unexportedFunc() {}
+
+type ExportedType struct{}
+type unexportedType struct{}
+`)
+	result, err := ParseSource(src, "test.go", "go", lang.Default.TreeSitter("go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exported := findSymbol(result.Symbols, "ExportedFunc")
+	if exported == nil {
+		t.Fatal("expected ExportedFunc")
+	}
+	if exported.Visibility != "public" {
+		t.Errorf("ExportedFunc: expected visibility=public, got %q", exported.Visibility)
+	}
+
+	unexported := findSymbol(result.Symbols, "unexportedFunc")
+	if unexported == nil {
+		t.Fatal("expected unexportedFunc")
+	}
+	if unexported.Visibility != "private" {
+		t.Errorf("unexportedFunc: expected visibility=private, got %q", unexported.Visibility)
+	}
+
+	exportedType := findSymbol(result.Symbols, "ExportedType")
+	if exportedType == nil {
+		t.Fatal("expected ExportedType")
+	}
+	if exportedType.Visibility != "public" {
+		t.Errorf("ExportedType: expected visibility=public, got %q", exportedType.Visibility)
+	}
+
+	unexportedType := findSymbol(result.Symbols, "unexportedType")
+	if unexportedType == nil {
+		t.Fatal("expected unexportedType")
+	}
+	if unexportedType.Visibility != "private" {
+		t.Errorf("unexportedType: expected visibility=private, got %q", unexportedType.Visibility)
+	}
+}
+
+func TestFeatureJSVisibility(t *testing.T) {
+	src := []byte(`export function exportedFunc() {}
+function internalFunc() {}
+export class ExportedClass {}
+class InternalClass {}
+`)
+	result, err := ParseSource(src, "test.js", "javascript", lang.Default.TreeSitter("javascript"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exported := findSymbol(result.Symbols, "exportedFunc")
+	if exported == nil {
+		t.Fatal("expected exportedFunc")
+	}
+	if exported.Visibility != "public" {
+		t.Errorf("exportedFunc: expected visibility=public, got %q", exported.Visibility)
+	}
+
+	internal := findSymbol(result.Symbols, "internalFunc")
+	if internal == nil {
+		t.Fatal("expected internalFunc")
+	}
+	if internal.Visibility != "private" {
+		t.Errorf("internalFunc: expected visibility=private, got %q", internal.Visibility)
+	}
+
+	exportedClass := findSymbol(result.Symbols, "ExportedClass")
+	if exportedClass == nil {
+		t.Fatal("expected ExportedClass")
+	}
+	if exportedClass.Visibility != "public" {
+		t.Errorf("ExportedClass: expected visibility=public, got %q", exportedClass.Visibility)
+	}
+
+	internalClass := findSymbol(result.Symbols, "InternalClass")
+	if internalClass == nil {
+		t.Fatal("expected InternalClass")
+	}
+	if internalClass.Visibility != "private" {
+		t.Errorf("InternalClass: expected visibility=private, got %q", internalClass.Visibility)
+	}
+}
+
+func TestFeatureTSVisibility(t *testing.T) {
+	src := []byte(`export interface PublicInterface {
+    method(): void;
+}
+interface PrivateInterface {
+    method(): void;
+}
+export type PublicType = string | number;
+type PrivateType = string | number;
+`)
+	result, err := ParseSource(src, "test.ts", "typescript", lang.Default.TreeSitter("typescript"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pub := findSymbol(result.Symbols, "PublicInterface")
+	if pub == nil {
+		t.Fatal("expected PublicInterface")
+	}
+	if pub.Visibility != "public" {
+		t.Errorf("PublicInterface: expected visibility=public, got %q", pub.Visibility)
+	}
+
+	priv := findSymbol(result.Symbols, "PrivateInterface")
+	if priv == nil {
+		t.Fatal("expected PrivateInterface")
+	}
+	if priv.Visibility != "private" {
+		t.Errorf("PrivateInterface: expected visibility=private, got %q", priv.Visibility)
+	}
+}
+
+func TestFeatureRustVisibility(t *testing.T) {
+	src := []byte(`pub fn public_func() {}
+fn private_func() {}
+pub struct PublicStruct {}
+struct PrivateStruct {}
+pub(crate) fn crate_func() {}
+`)
+	result, err := ParseSource(src, "test.rs", "rust", lang.Default.TreeSitter("rust"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pub := findSymbol(result.Symbols, "public_func")
+	if pub == nil {
+		t.Fatal("expected public_func")
+	}
+	if pub.Visibility != "public" {
+		t.Errorf("public_func: expected visibility=public, got %q", pub.Visibility)
+	}
+
+	priv := findSymbol(result.Symbols, "private_func")
+	if priv == nil {
+		t.Fatal("expected private_func")
+	}
+	if priv.Visibility != "private" {
+		t.Errorf("private_func: expected visibility=private, got %q", priv.Visibility)
+	}
+
+	pubStruct := findSymbol(result.Symbols, "PublicStruct")
+	if pubStruct == nil {
+		t.Fatal("expected PublicStruct")
+	}
+	if pubStruct.Visibility != "public" {
+		t.Errorf("PublicStruct: expected visibility=public, got %q", pubStruct.Visibility)
+	}
+
+	privStruct := findSymbol(result.Symbols, "PrivateStruct")
+	if privStruct == nil {
+		t.Fatal("expected PrivateStruct")
+	}
+	if privStruct.Visibility != "private" {
+		t.Errorf("PrivateStruct: expected visibility=private, got %q", privStruct.Visibility)
+	}
+
+	crateFunc := findSymbol(result.Symbols, "crate_func")
+	if crateFunc == nil {
+		t.Fatal("expected crate_func")
+	}
+	if crateFunc.Visibility != "public" {
+		t.Errorf("crate_func: expected visibility=public (pub(crate) is a pub variant), got %q", crateFunc.Visibility)
+	}
+}
+
+func TestFeatureJavaVisibility(t *testing.T) {
+	src := []byte(`public class MyClass {
+    public void publicMethod() {}
+    private void privateMethod() {}
+    protected void protectedMethod() {}
+    void packageMethod() {}
+}
+`)
+	result, err := ParseSource(src, "Test.java", "java", lang.Default.TreeSitter("java"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pub := findSymbol(result.Symbols, "publicMethod")
+	if pub == nil {
+		t.Fatal("expected publicMethod")
+	}
+	if pub.Visibility != "public" {
+		t.Errorf("publicMethod: expected visibility=public, got %q", pub.Visibility)
+	}
+
+	priv := findSymbol(result.Symbols, "privateMethod")
+	if priv == nil {
+		t.Fatal("expected privateMethod")
+	}
+	if priv.Visibility != "private" {
+		t.Errorf("privateMethod: expected visibility=private, got %q", priv.Visibility)
+	}
+
+	prot := findSymbol(result.Symbols, "protectedMethod")
+	if prot == nil {
+		t.Fatal("expected protectedMethod")
+	}
+	if prot.Visibility != "protected" {
+		t.Errorf("protectedMethod: expected visibility=protected, got %q", prot.Visibility)
+	}
+
+	pkg := findSymbol(result.Symbols, "packageMethod")
+	if pkg == nil {
+		t.Fatal("expected packageMethod")
+	}
+	if pkg.Visibility != "internal" {
+		t.Errorf("packageMethod: expected visibility=internal (package-private), got %q", pkg.Visibility)
+	}
+}
+
+func TestFeatureKotlinVisibility(t *testing.T) {
+	src := []byte(`fun defaultPublicFunc() {}
+public fun explicitPublicFunc() {}
+private fun privateFunc() {}
+protected fun protectedFunc() {}
+internal fun internalFunc() {}
+`)
+	result, err := ParseSource(src, "test.kt", "kotlin", lang.Default.TreeSitter("kotlin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	def := findSymbol(result.Symbols, "defaultPublicFunc")
+	if def == nil {
+		t.Fatal("expected defaultPublicFunc")
+	}
+	if def.Visibility != "public" {
+		t.Errorf("defaultPublicFunc: expected visibility=public (Kotlin default), got %q", def.Visibility)
+	}
+
+	priv := findSymbol(result.Symbols, "privateFunc")
+	if priv == nil {
+		t.Fatal("expected privateFunc")
+	}
+	if priv.Visibility != "private" {
+		t.Errorf("privateFunc: expected visibility=private, got %q", priv.Visibility)
+	}
+
+	internal := findSymbol(result.Symbols, "internalFunc")
+	if internal == nil {
+		t.Fatal("expected internalFunc")
+	}
+	if internal.Visibility != "internal" {
+		t.Errorf("internalFunc: expected visibility=internal, got %q", internal.Visibility)
+	}
+}
+
+func TestFeaturePythonVisibility(t *testing.T) {
+	src := []byte(`def public_func():
+    pass
+
+def _private_func():
+    pass
+
+class PublicClass:
+    pass
+
+class _PrivateClass:
+    pass
+`)
+	result, err := ParseSource(src, "test.py", "python", lang.Default.TreeSitter("python"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pub := findSymbol(result.Symbols, "public_func")
+	if pub == nil {
+		t.Fatal("expected public_func")
+	}
+	if pub.Visibility != "public" {
+		t.Errorf("public_func: expected visibility=public, got %q", pub.Visibility)
+	}
+
+	priv := findSymbol(result.Symbols, "_private_func")
+	if priv == nil {
+		t.Fatal("expected _private_func (private symbols now included)")
+	}
+	if priv.Visibility != "private" {
+		t.Errorf("_private_func: expected visibility=private, got %q", priv.Visibility)
+	}
+
+	pubClass := findSymbol(result.Symbols, "PublicClass")
+	if pubClass == nil {
+		t.Fatal("expected PublicClass")
+	}
+	if pubClass.Visibility != "public" {
+		t.Errorf("PublicClass: expected visibility=public, got %q", pubClass.Visibility)
+	}
+
+	privClass := findSymbol(result.Symbols, "_PrivateClass")
+	if privClass == nil {
+		t.Fatal("expected _PrivateClass (private symbols now included)")
+	}
+	if privClass.Visibility != "private" {
+		t.Errorf("_PrivateClass: expected visibility=private, got %q", privClass.Visibility)
+	}
+}
+
+func TestFeatureElixirVisibility(t *testing.T) {
+	// Note: Elixir classifier returns the call node content including args,
+	// so "def public_func(x)" produces a symbol named "public_func(x)".
+	src := []byte(`defmodule MyModule do
+  def public_func(x) do
+    x
+  end
+
+  defp private_func(x) do
+    x * 2
+  end
+end
+`)
+	result, err := ParseSource(src, "test.ex", "elixir", lang.Default.TreeSitter("elixir"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Find functions by checking which function symbols have the expected visibility.
+	var pubFunc, privFunc *symbols.Symbol
+	for i := range result.Symbols {
+		s := &result.Symbols[i]
+		if s.Kind == "function" {
+			if s.Visibility == "public" {
+				pubFunc = s
+			} else if s.Visibility == "private" {
+				privFunc = s
+			}
+		}
+	}
+
+	if pubFunc == nil {
+		t.Fatal("expected a public function (def ...)")
+	}
+	if privFunc == nil {
+		t.Fatal("expected a private function (defp ...)")
+	}
+}
+
+func TestFeatureDartVisibility(t *testing.T) {
+	src := []byte(`class MyClass {
+  void publicMethod() {}
+  void _privateMethod() {}
+}
+`)
+	result, err := ParseSource(src, "test.dart", "dart", lang.Default.TreeSitter("dart"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pub := findSymbol(result.Symbols, "publicMethod")
+	if pub == nil {
+		t.Fatal("expected publicMethod")
+	}
+	if pub.Visibility != "public" {
+		t.Errorf("publicMethod: expected visibility=public, got %q", pub.Visibility)
+	}
+
+	priv := findSymbol(result.Symbols, "_privateMethod")
+	if priv == nil {
+		t.Fatal("expected _privateMethod")
+	}
+	if priv.Visibility != "private" {
+		t.Errorf("_privateMethod: expected visibility=private, got %q", priv.Visibility)
 	}
 }

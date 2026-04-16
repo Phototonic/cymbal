@@ -28,18 +28,25 @@ Results are ranked: exact match > prefix > fuzzy.`,
 		textMode, _ := cmd.Flags().GetBool("text")
 		includes, _ := cmd.Flags().GetStringArray("path")
 		excludes, _ := cmd.Flags().GetStringArray("exclude")
+		visFilter, _ := cmd.Flags().GetString("visibility")
+		exported, _ := cmd.Flags().GetBool("exported")
 		hasFilters := len(includes) > 0 || len(excludes) > 0
+
+		if exported {
+			visFilter = "public"
+		}
 
 		if textMode {
 			return searchText(dbPath, query, lang, limit, jsonOut, includes, excludes)
 		}
 
 		results, err := index.SearchSymbols(dbPath, index.SearchQuery{
-			Text:     query,
-			Kind:     kind,
-			Language: lang,
-			Exact:    exact,
-			Limit:    widenPathFilterLimit(limit, hasFilters),
+			Text:       query,
+			Kind:       kind,
+			Language:   lang,
+			Exact:      exact,
+			Limit:      widenPathFilterLimit(limit, hasFilters),
+			Visibility: visFilter,
 		})
 		if err != nil {
 			return err
@@ -82,6 +89,8 @@ func init() {
 	searchCmd.Flags().BoolP("text", "t", false, "full-text grep across file contents")
 	searchCmd.Flags().StringArray("path", nil, "include only results whose path matches this glob (repeatable)")
 	searchCmd.Flags().StringArray("exclude", nil, "exclude results whose path matches this glob (repeatable)")
+	searchCmd.Flags().String("visibility", "", "filter by visibility: public, private, protected, internal")
+	searchCmd.Flags().Bool("exported", false, "shorthand for --visibility=public")
 	rootCmd.AddCommand(searchCmd)
 }
 

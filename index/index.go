@@ -41,11 +41,12 @@ type Stats struct {
 
 // SearchQuery defines a search request.
 type SearchQuery struct {
-	Text     string
-	Kind     string
-	Language string
-	Exact    bool
-	Limit    int
+	Text       string
+	Kind       string
+	Language   string
+	Exact      bool
+	Limit      int
+	Visibility string // filter by visibility: "public", "private", "protected", "internal", or "" for all
 }
 
 // TextResult holds a text search match.
@@ -578,7 +579,7 @@ func SearchSymbols(dbPath string, q SearchQuery) ([]SymbolResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return store.SearchSymbols(q.Text, q.Kind, q.Language, q.Exact, q.Limit)
+	return store.SearchSymbols(q.Text, q.Kind, q.Language, q.Exact, q.Limit, q.Visibility)
 }
 
 // RepoStats returns overview statistics for the repo in the given database.

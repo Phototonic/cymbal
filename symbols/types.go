@@ -2,17 +2,18 @@ package symbols
 
 // Symbol represents a parsed code symbol.
 type Symbol struct {
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	File      string `json:"file"`
-	StartLine int    `json:"start_line"`
-	EndLine   int    `json:"end_line"`
-	StartCol  int    `json:"start_col,omitempty"`
-	EndCol    int    `json:"end_col,omitempty"`
-	Parent    string `json:"parent,omitempty"`
-	Depth     int    `json:"depth"`
-	Signature string `json:"signature,omitempty"`
-	Language  string `json:"language"`
+	Name       string `json:"name"`
+	Kind       string `json:"kind"`
+	File       string `json:"file"`
+	StartLine  int    `json:"start_line"`
+	EndLine    int    `json:"end_line"`
+	StartCol   int    `json:"start_col,omitempty"`
+	EndCol     int    `json:"end_col,omitempty"`
+	Parent     string `json:"parent,omitempty"`
+	Depth      int    `json:"depth"`
+	Signature  string `json:"signature,omitempty"`
+	Language   string `json:"language"`
+	Visibility string `json:"visibility,omitempty"`
 }
 
 // Import represents an import/use statement found in source.

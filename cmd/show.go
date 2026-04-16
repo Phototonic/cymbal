@@ -231,6 +231,9 @@ func renderShowMeta(sym index.SymbolResult, allResults []index.SymbolResult, fuz
 		{"kind", sym.Kind},
 		{"file", fmt.Sprintf("%s:%d", sym.RelPath, sym.StartLine)},
 	}
+	if sym.Visibility != "" {
+		meta = append(meta, kv{"visibility", sym.Visibility})
+	}
 	if len(allResults) > 1 {
 		also := make([]string, 0, max(0, len(allResults)-1))
 		for i, r := range allResults {

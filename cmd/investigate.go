@@ -164,6 +164,9 @@ func investigateOnePrint(dbPath, name string, jsonOut bool) error {
 		{"investigate", result.Kind},
 		{"file", fmt.Sprintf("%s:%d", sym.RelPath, sym.StartLine)},
 	}
+	if sym.Visibility != "" {
+		meta = append(meta, kv{"visibility", sym.Visibility})
+	}
 	if res.TotalFound > 1 {
 		also := make([]string, 0, len(res.Results)-1)
 		for _, r := range res.Results[1:] {

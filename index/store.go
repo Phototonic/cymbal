@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS symbols (
 	parent      TEXT,
 	depth       INTEGER DEFAULT 0,
 	signature   TEXT,
-	language    TEXT NOT NULL
+	language    TEXT NOT NULL,
+	visibility  TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS imports (
@@ -115,6 +116,7 @@ func OpenStore(dbPath string) (*Store, error) {
 	db.Exec("ALTER TABLE files ADD COLUMN mtime DATETIME")
 	db.Exec("ALTER TABLE files ADD COLUMN mtime_ns INTEGER")
 	db.Exec("ALTER TABLE files ADD COLUMN size INTEGER")
+	db.Exec("ALTER TABLE symbols ADD COLUMN visibility TEXT DEFAULT ''")
 
 	db.Exec("PRAGMA cache_size = -64000")
 	db.Exec("PRAGMA mmap_size = 268435456")
@@ -307,8 +309,8 @@ func (s *Store) InsertSymbols(fileID int64, syms []symbols.Symbol) error {
 
 func insertSymbolsTx(tx *sql.Tx, fileID int64, syms []symbols.Symbol) error {
 	stmt, err := tx.Prepare(`INSERT INTO symbols
-		(file_id, name, kind, start_line, end_line, start_col, end_col, parent, depth, signature, language)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		(file_id, name, kind, start_line, end_line, start_col, end_col, parent, depth, signature, language, visibility)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -318,7 +320,7 @@ func insertSymbolsTx(tx *sql.Tx, fileID int64, syms []symbols.Symbol) error {
 		_, err := stmt.Exec(
 			fileID, sym.Name, sym.Kind,
 			sym.StartLine, sym.EndLine, sym.StartCol, sym.EndCol,
-			sym.Parent, sym.Depth, sym.Signature, sym.Language,
+			sym.Parent, sym.Depth, sym.Signature, sym.Language, sym.Visibility,
 		)
 		if err != nil {
 			return err
@@ -462,8 +464,8 @@ func PrepareBatchStmts(tx *sql.Tx) (*BatchStmts, error) {
 		return nil, err
 	}
 	b.insSymbol, err = tx.Prepare(`INSERT INTO symbols
-		(file_id, name, kind, start_line, end_line, start_col, end_col, parent, depth, signature, language)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		(file_id, name, kind, start_line, end_line, start_col, end_col, parent, depth, signature, language, visibility)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		b.Close()
 		return nil, err
@@ -518,7 +520,7 @@ func InsertFileAllStmts(b *BatchStmts, filePath, relPath, lang, hash string, mti
 		if _, err := b.insSymbol.Exec(
 			fileID, sym.Name, sym.Kind,
 			sym.StartLine, sym.EndLine, sym.StartCol, sym.EndCol,
-			sym.Parent, sym.Depth, sym.Signature, sym.Language,
+			sym.Parent, sym.Depth, sym.Signature, sym.Language, sym.Visibility,
 		); err != nil {
 			return err
 		}
@@ -538,16 +540,17 @@ func InsertFileAllStmts(b *BatchStmts, filePath, relPath, lang, hash string, mti
 
 // SymbolResult holds a search result.
 type SymbolResult struct {
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	File      string `json:"file"`
-	RelPath   string `json:"rel_path"`
-	StartLine int    `json:"start_line"`
-	EndLine   int    `json:"end_line"`
-	Parent    string `json:"parent,omitempty"`
-	Depth     int    `json:"depth"`
-	Signature string `json:"signature,omitempty"`
-	Language  string `json:"language"`
+	Name       string `json:"name"`
+	Kind       string `json:"kind"`
+	File       string `json:"file"`
+	RelPath    string `json:"rel_path"`
+	StartLine  int    `json:"start_line"`
+	EndLine    int    `json:"end_line"`
+	Parent     string `json:"parent,omitempty"`
+	Depth      int    `json:"depth"`
+	Signature  string `json:"signature,omitempty"`
+	Language   string `json:"language"`
+	Visibility string `json:"visibility,omitempty"`
 }
 
 // SymbolID returns a stable identifier for this symbol.
@@ -616,7 +619,7 @@ func (s *Store) Structure(limit int) (*StructureResult, error) {
 
 	// Entry points: main, init, or exported top-level functions at depth 0
 	entryRows, err := s.db.Query(`
-		SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
+		SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language, s.visibility
 		FROM symbols s JOIN files f ON s.file_id = f.id
 		WHERE s.depth = 0 AND s.kind IN ('function', 'method')
 		  AND (s.name = 'main' OR s.name = 'init' OR s.name = 'Main' OR s.name = 'Init'
@@ -628,7 +631,7 @@ func (s *Store) Structure(limit int) (*StructureResult, error) {
 		for entryRows.Next() {
 			var sym SymbolResult
 			entryRows.Scan(&sym.Name, &sym.Kind, &sym.File, &sym.RelPath, &sym.StartLine, &sym.EndLine,
-				&sym.Parent, &sym.Depth, &sym.Signature, &sym.Language)
+				&sym.Parent, &sym.Depth, &sym.Signature, &sym.Language, &sym.Visibility)
 			result.EntryPoints = append(result.EntryPoints, sym)
 		}
 	}
@@ -636,7 +639,7 @@ func (s *Store) Structure(limit int) (*StructureResult, error) {
 	// Top symbols by ref count
 	refRows, err := s.db.Query(`
 		SELECT r.name, COUNT(*) as cnt,
-		       s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
+		       s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language, s.visibility
 		FROM refs r
 		JOIN symbols s ON s.name = r.name AND s.depth = 0
 		JOIN files f ON s.file_id = f.id
@@ -650,7 +653,7 @@ func (s *Store) Structure(limit int) (*StructureResult, error) {
 			var rs RankedSymbol
 			refRows.Scan(&rs.Name, &rs.Count,
 				&rs.Kind, &rs.File, &rs.RelPath, &rs.StartLine, &rs.EndLine,
-				&rs.Parent, &rs.Depth, &rs.Signature, &rs.Language)
+				&rs.Parent, &rs.Depth, &rs.Signature, &rs.Language, &rs.Visibility)
 			result.TopByRefs = append(result.TopByRefs, rs)
 		}
 	}
@@ -713,7 +716,7 @@ func (s *Store) SearchSymbolsCI(name string, limit int) ([]SymbolResult, error) 
 	// before truncating to the user limit. Definition counts are small even
 	// in large repos, so no LIMIT is needed here.
 	rows, err := s.db.Query(`
-		SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
+		SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language, s.visibility
 		FROM symbols s JOIN files f ON s.file_id = f.id
 		WHERE s.name COLLATE NOCASE = ?
 		ORDER BY s.name
@@ -726,7 +729,7 @@ func (s *Store) SearchSymbolsCI(name string, limit int) ([]SymbolResult, error) 
 	var results []SymbolResult
 	for rows.Next() {
 		var r SymbolResult
-		if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Language); err != nil {
+		if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Language, &r.Visibility); err != nil {
 			return nil, err
 		}
 		results = append(results, r)
@@ -742,7 +745,11 @@ func (s *Store) SearchSymbolsCI(name string, limit int) ([]SymbolResult, error) 
 }
 
 // SearchSymbols searches using FTS5 with ranking: exact > prefix > fuzzy.
-func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) ([]SymbolResult, error) {
+func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int, visibility ...string) ([]SymbolResult, error) {
+	vis := ""
+	if len(visibility) > 0 {
+		vis = visibility[0]
+	}
 	var rows *sql.Rows
 	var err error
 
@@ -750,7 +757,7 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 	fetch := rankFetchWindow(limit, exact)
 
 	if exact {
-		q := `SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
+		q := `SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language, s.visibility
 			  FROM symbols s JOIN files f ON s.file_id = f.id
 			  WHERE s.name = ?`
 		args := []any{query}
@@ -762,6 +769,10 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 			q += " AND s.language = ?"
 			args = append(args, lang)
 		}
+		if vis != "" {
+			q += " AND s.visibility = ?"
+			args = append(args, vis)
+		}
 		// fetch==0 means no LIMIT (fetch all rows so ranking sees full set).
 		if fetch > 0 {
 			q += " ORDER BY s.name LIMIT ?"
@@ -772,7 +783,7 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 		rows, err = s.db.Query(q, args...)
 	} else {
 		ftsQuery := query + "*"
-		q := `SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
+		q := `SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language, s.visibility
 			  FROM symbols_fts fts
 			  JOIN symbols s ON fts.rowid = s.id
 			  JOIN files f ON s.file_id = f.id
@@ -785,6 +796,10 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 		if lang != "" {
 			q += " AND s.language = ?"
 			args = append(args, lang)
+		}
+		if vis != "" {
+			q += " AND s.visibility = ?"
+			args = append(args, vis)
 		}
 		q += ` ORDER BY
 			CASE WHEN s.name = ? THEN 0
@@ -803,7 +818,7 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 	var results []SymbolResult
 	for rows.Next() {
 		var r SymbolResult
-		if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Language); err != nil {
+		if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Language, &r.Visibility); err != nil {
 			return nil, err
 		}
 		results = append(results, r)
@@ -854,7 +869,7 @@ func rankWithinFTSTiers(results []SymbolResult, query string) {
 // FileSymbols returns all symbols in a given file.
 func (s *Store) FileSymbols(filePath string) ([]SymbolResult, error) {
 	rows, err := s.db.Query(`
-		SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
+		SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language, s.visibility
 		FROM symbols s JOIN files f ON s.file_id = f.id
 		WHERE f.path = ?
 		ORDER BY s.start_line
@@ -867,7 +882,7 @@ func (s *Store) FileSymbols(filePath string) ([]SymbolResult, error) {
 	var results []SymbolResult
 	for rows.Next() {
 		var r SymbolResult
-		if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Language); err != nil {
+		if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Language, &r.Visibility); err != nil {
 			return nil, err
 		}
 		results = append(results, r)
@@ -883,7 +898,7 @@ func (s *Store) ChildSymbols(parentName string, limit int, filePath ...string) (
 	var err error
 	if len(filePath) > 0 && filePath[0] != "" {
 		rows, err = s.db.Query(`
-			SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
+			SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language, s.visibility
 			FROM symbols s JOIN files f ON s.file_id = f.id
 			WHERE s.parent = ? AND f.path = ?
 			ORDER BY s.start_line
@@ -891,7 +906,7 @@ func (s *Store) ChildSymbols(parentName string, limit int, filePath ...string) (
 		`, parentName, filePath[0], limit)
 	} else {
 		rows, err = s.db.Query(`
-			SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
+			SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language, s.visibility
 			FROM symbols s JOIN files f ON s.file_id = f.id
 			WHERE s.parent = ?
 			ORDER BY s.start_line
@@ -906,7 +921,7 @@ func (s *Store) ChildSymbols(parentName string, limit int, filePath ...string) (
 	var results []SymbolResult
 	for rows.Next() {
 		var r SymbolResult
-		if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Language); err != nil {
+		if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Language, &r.Visibility); err != nil {
 			return nil, err
 		}
 		results = append(results, r)
@@ -1115,7 +1130,7 @@ func (s *Store) TypeRefsInRange(filePath string, startLine, endLine int) ([]Symb
 	seen := make(map[string]bool)
 	for _, name := range names {
 		rows, err := s.db.Query(`
-			SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
+			SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language, s.visibility
 			FROM symbols s JOIN files f ON s.file_id = f.id
 			WHERE s.name = ? AND s.kind IN ('struct','interface','class','type','enum','trait')
 		`, name)
@@ -1124,7 +1139,7 @@ func (s *Store) TypeRefsInRange(filePath string, startLine, endLine int) ([]Symb
 		}
 		for rows.Next() {
 			var r SymbolResult
-			if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Language); err != nil {
+			if err := rows.Scan(&r.Name, &r.Kind, &r.File, &r.RelPath, &r.StartLine, &r.EndLine, &r.Parent, &r.Depth, &r.Signature, &r.Language, &r.Visibility); err != nil {
 				rows.Close()
 				return nil, err
 			}
