@@ -2,6 +2,25 @@
 
 All notable changes to cymbal are documented here.
 
+## [Unreleased]
+
+### Added
+
+- **Symbol visibility metadata** — symbols now include normalized visibility (`public`, `private`, `protected`, `internal`) in parser output, index storage, and JSON responses where available.
+- **Visibility-aware search filters** — `cymbal search` now supports `--visibility <public|private|protected|internal>` and `--exported` (shorthand for `--visibility public`).
+- **CLI validation for visibility filters** — invalid visibility values now return a clear error; conflicting `--exported` + incompatible `--visibility` combinations are rejected.
+
+### Changed
+
+- **Python private symbol handling** — underscore-prefixed Python symbols are now indexed as `visibility=private` instead of being dropped.
+- **Visibility metadata in symbol views** — `show` and `investigate` frontmatter now include symbol visibility when available.
+
+### Fixed
+
+- **Rust scoped visibility mapping** — `pub(crate)`, `pub(super)`, and `pub(in ...)` are classified as `internal`; `pub(self)` as `private`; bare `pub` remains `public`.
+- **Apex `global` visibility mapping** — Apex `global` symbols now map to `public` visibility semantics.
+- **Visibility test coverage quality** — improved parser/CLI tests for Kotlin, Elixir, Rust scoped visibility, Apex visibility, and search visibility parsing.
+
 ## [0.10.0] - 2026-04-15
 
 ### Highlights

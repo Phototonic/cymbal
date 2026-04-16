@@ -102,6 +102,8 @@ cymbal trace handleAuth          # downward call chain — what does it call?
 # Or use specific commands when you need control
 cymbal search handleAuth         # find a symbol
 cymbal search "TODO" --text      # full-text grep
+cymbal search handleAuth --visibility public   # only public/exported symbols
+cymbal search handleAuth --exported            # shorthand for --visibility public
 cymbal show handleAuth           # read source
 cymbal outline internal/auth/handler.go  # file structure
 cymbal refs handleAuth           # who calls this?
@@ -123,7 +125,7 @@ The index auto-builds on first use — no manual `cymbal index .` required. Subs
 | `trace` | Downward call graph — what does this symbol call? |
 | `index` | Parse and index a directory |
 | `ls` | File tree, repo list, or `--stats` overview |
-| `search` | Symbol search (or `--text` for grep). Supports `--path`, `--exclude` |
+| `search` | Symbol search (or `--text` for grep). Supports `--path`, `--exclude`, `--visibility`, `--exported` |
 | `show` | Display a symbol's source code. `--all` for every match |
 | `outline` | List all symbols in a file |
 | `refs` | Find references / call sites. `--file` to scope by path |
@@ -155,6 +157,7 @@ Use `cymbal` CLI for code navigation — prefer it over Read, Grep, Glob, or Bas
 - Before reading a file: `cymbal outline <file>` or `cymbal show <file:L1-L2>`
 - Before searching: `cymbal search <query>` (symbols) or `cymbal search <query> --text` (grep, delegates to rg when available)
 - To filter results: `cymbal search --path 'src/*' --exclude '*_test.go' <query>`
+- To filter by symbol visibility: `cymbal search --visibility public <query>` or `cymbal search --exported <query>`
 - To see all definitions: `cymbal show --all <symbol>` or `cymbal refs --file context.go <symbol>`
 - Before exploring structure: `cymbal ls` (tree) or `cymbal ls --stats` (overview)
 - To disambiguate: `cymbal show path/to/file.go:SymbolName` or `cymbal investigate file.go:Symbol`
@@ -175,6 +178,7 @@ Run all cymbal commands as: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1bro
 - **To assess change risk**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal impact <symbol>` — follows the call graph upward (what breaks if X changes).
 - Before reading a file: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal outline <file>` or `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal show <file:L1-L2>`
 - Before searching: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal search <query>` (symbols) or add `--text` for grep
+- To filter by symbol visibility: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal search --visibility public <query>` (or `--exported`)
 - Before exploring structure: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal ls` or `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal ls --stats`
 - To disambiguate: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal investigate path/to/file.go:Symbol`
 - The index auto-builds on first use — no manual indexing step needed. Queries auto-refresh incrementally.
