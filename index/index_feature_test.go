@@ -100,7 +100,7 @@ func TestFeatureIndexBasicSymbolCounts(t *testing.T) {
 	defer store.Close()
 
 	// Should find Server struct
-	results, err := store.SearchSymbols("Server", "", "", true, 50)
+	results, err := store.SearchSymbols("Server", "", "", true, false, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestFeatureIndexBasicSymbolCounts(t *testing.T) {
 	}
 
 	// Should find Calculator class
-	results, err = store.SearchSymbols("Calculator", "", "", true, 50)
+	results, err = store.SearchSymbols("Calculator", "", "", true, false, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestFeatureIndexStalePruning(t *testing.T) {
 	}
 	defer store.Close()
 
-	results, err := store.SearchSymbols("Calculator", "", "", true, 50)
+	results, err := store.SearchSymbols("Calculator", "", "", true, false, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,22 +244,22 @@ func UniqueOther() {}
 	}
 	defer store2.Close()
 
-	r1, _ := store1.SearchSymbols("Server", "", "", true, 50)
+	r1, _ := store1.SearchSymbols("Server", "", "", true, false, 50)
 	if len(r1) == 0 {
 		t.Error("repo1 should have Server")
 	}
 
-	r2, _ := store2.SearchSymbols("Server", "", "", true, 50)
+	r2, _ := store2.SearchSymbols("Server", "", "", true, false, 50)
 	if len(r2) != 0 {
 		t.Error("repo2 should NOT have Server")
 	}
 
-	r3, _ := store2.SearchSymbols("UniqueOther", "", "", true, 50)
+	r3, _ := store2.SearchSymbols("UniqueOther", "", "", true, false, 50)
 	if len(r3) == 0 {
 		t.Error("repo2 should have UniqueOther")
 	}
 
-	r4, _ := store1.SearchSymbols("UniqueOther", "", "", true, 50)
+	r4, _ := store1.SearchSymbols("UniqueOther", "", "", true, false, 50)
 	if len(r4) != 0 {
 		t.Error("repo1 should NOT have UniqueOther")
 	}

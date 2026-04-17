@@ -60,7 +60,7 @@ func TestFeatureStoreFTS5Search(t *testing.T) {
 	insertTestSymbols(t, store)
 
 	// FTS5 prefix search for "Handle"
-	results, err := store.SearchSymbols("Handle", "", "", false, 50)
+	results, err := store.SearchSymbols("Handle", "", "", false, false, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestFeatureStoreExactSearch(t *testing.T) {
 	store, _ := newTestStore(t)
 	insertTestSymbols(t, store)
 
-	results, err := store.SearchSymbols("HandleRequest", "", "", true, 50)
+	results, err := store.SearchSymbols("HandleRequest", "", "", true, false, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestFeatureStoreKindFilter(t *testing.T) {
 	insertTestSymbols(t, store)
 
 	// Search for all functions only
-	results, err := store.SearchSymbols("main", "function", "", true, 50)
+	results, err := store.SearchSymbols("main", "function", "", true, false, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestFeatureStoreKindFilter(t *testing.T) {
 	}
 
 	// Search for structs
-	results, err = store.SearchSymbols("Config", "struct", "", true, 50)
+	results, err = store.SearchSymbols("Config", "struct", "", true, false, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestFeatureStoreLanguageFilter(t *testing.T) {
 	insertTestSymbols(t, store)
 
 	// Search Config in Go only
-	results, err := store.SearchSymbols("Config", "", "go", true, 50)
+	results, err := store.SearchSymbols("Config", "", "go", true, false, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestFeatureStoreLanguageFilter(t *testing.T) {
 	}
 
 	// Search Config in Python only
-	results, err = store.SearchSymbols("Config", "", "python", true, 50)
+	results, err = store.SearchSymbols("Config", "", "python", true, false, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,12 +180,38 @@ func TestFeatureStoreCaseInsensitiveSearch(t *testing.T) {
 	}
 }
 
+func TestFeatureStoreExactIgnoreCase(t *testing.T) {
+	store, _ := newTestStore(t)
+	insertTestSymbols(t, store)
+
+	// Case-insensitive exact match via the new ignoreCase flag.
+	results, err := store.SearchSymbols("handlerequest", "", "", true, true, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected ignoreCase exact search to find HandleRequest")
+	}
+	if results[0].Name != "HandleRequest" {
+		t.Errorf("expected HandleRequest, got %s", results[0].Name)
+	}
+
+	// Ensure case-sensitive exact does NOT find the lowercase variant.
+	strict, err := store.SearchSymbols("handlerequest", "", "", true, false, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(strict) != 0 {
+		t.Errorf("expected case-sensitive exact to return 0 results, got %d", len(strict))
+	}
+}
+
 func TestFeatureStoreEmptyResults(t *testing.T) {
 	store, _ := newTestStore(t)
 	insertTestSymbols(t, store)
 
 	// Search for something that doesn't exist
-	results, err := store.SearchSymbols("NonExistentSymbolXYZ123", "", "", true, 50)
+	results, err := store.SearchSymbols("NonExistentSymbolXYZ123", "", "", true, false, 50)
 	if err != nil {
 		t.Fatal(err)
 	}

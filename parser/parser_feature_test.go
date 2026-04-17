@@ -1101,6 +1101,207 @@ void doSomething() {}
 	}
 }
 
+// --- Swift Language Feature Tests ---
+
+func TestFeatureSwiftSymbols(t *testing.T) {
+	src := []byte(`import Foundation
+import SwiftUI
+
+protocol BabyTrackingService {
+    func logFeeding(_ event: FeedingEvent) async throws
+}
+
+struct FeedingActivityAttributes {
+    var babyName: String
+}
+
+enum FeedingKind {
+    case bottle
+    case breast
+}
+
+final class BabyTrackingServiceImpl: BabyTrackingService {
+    let attrs: FeedingActivityAttributes
+    var kinds: [FeedingKind] = []
+
+    init(attrs: FeedingActivityAttributes) {
+        self.attrs = attrs
+    }
+
+    func logFeeding(_ event: FeedingEvent) async throws {}
+}
+
+extension BabyTrackingServiceImpl {
+    func summary() -> String { "ok" }
+}
+
+func make() -> BabyTrackingService {
+    return BabyTrackingServiceImpl(attrs: FeedingActivityAttributes(babyName: ""))
+}
+
+let GLOBAL = 42
+var counter = 0
+`)
+	result, err := ParseSource(src, "test.swift", "swift", lang.Default.TreeSitter("swift"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Protocol.
+	if findSymbolKind(result.Symbols, "BabyTrackingService", "protocol") == nil {
+		t.Error("expected BabyTrackingService protocol")
+	}
+
+	// Struct / enum / class.
+	if findSymbolKind(result.Symbols, "FeedingActivityAttributes", "struct") == nil {
+		t.Error("expected FeedingActivityAttributes struct")
+	}
+	if findSymbolKind(result.Symbols, "FeedingKind", "enum") == nil {
+		t.Error("expected FeedingKind enum")
+	}
+	if findSymbolKind(result.Symbols, "BabyTrackingServiceImpl", "class") == nil {
+		t.Error("expected BabyTrackingServiceImpl class")
+	}
+
+	// Extension — name is the extended type.
+	if findSymbolKind(result.Symbols, "BabyTrackingServiceImpl", "extension") == nil {
+		t.Error("expected BabyTrackingServiceImpl extension")
+	}
+
+	// Top-level function.
+	if findSymbolKind(result.Symbols, "make", "function") == nil {
+		t.Error("expected make function")
+	}
+
+	// logFeeding appears twice — once as a protocol requirement (parent
+	// BabyTrackingService) and once as a class method (parent
+	// BabyTrackingServiceImpl). Both should be classified as method.
+	var sawProtocol, sawImpl bool
+	for _, s := range result.Symbols {
+		if s.Name != "logFeeding" || s.Kind != "method" {
+			continue
+		}
+		switch s.Parent {
+		case "BabyTrackingService":
+			sawProtocol = true
+		case "BabyTrackingServiceImpl":
+			sawImpl = true
+		}
+	}
+	if !sawProtocol {
+		t.Error("expected logFeeding method under BabyTrackingService protocol")
+	}
+	if !sawImpl {
+		t.Error("expected logFeeding method under BabyTrackingServiceImpl class")
+	}
+
+	// Constructor.
+	if findSymbolKind(result.Symbols, "init", "constructor") == nil {
+		t.Error("expected init constructor")
+	}
+
+	// Fields (inside class_body).
+	if findSymbolKind(result.Symbols, "attrs", "field") == nil {
+		t.Error("expected attrs field")
+	}
+	if findSymbolKind(result.Symbols, "kinds", "field") == nil {
+		t.Error("expected kinds field")
+	}
+
+	// Top-level bindings: let → constant, var → variable.
+	if findSymbolKind(result.Symbols, "GLOBAL", "constant") == nil {
+		t.Error("expected GLOBAL constant")
+	}
+	if findSymbolKind(result.Symbols, "counter", "variable") == nil {
+		t.Error("expected counter variable")
+	}
+
+	// Enum members.
+	if findSymbolKind(result.Symbols, "bottle", "enum_member") == nil {
+		t.Error("expected bottle enum_member")
+	}
+
+	// Imports.
+	if findImport(result.Imports, "Foundation") == nil {
+		t.Error("expected Foundation import")
+	}
+	if findImport(result.Imports, "SwiftUI") == nil {
+		t.Error("expected SwiftUI import")
+	}
+
+	// Signature captured for functions.
+	if m := findSymbol(result.Symbols, "make"); m == nil || m.Signature == "" {
+		t.Error("expected non-empty signature for make function")
+	}
+}
+
+func TestFeatureSwiftRefs(t *testing.T) {
+	src := []byte(`protocol BabyTrackingService {}
+
+final class BabyTrackingServiceImpl: BabyTrackingService {
+    private let store: FeedingStore
+    let attrs: FeedingActivityAttributes
+    var kinds: [FeedingKind] = []
+    var mapping: [String: BabyTrackingService] = [:]
+
+    init(store: FeedingStore) {
+        self.store = store
+    }
+
+    func logFeeding(_ event: FeedingEvent) async throws {
+        try await store.persist(event)
+        let arr: Array<FeedingKind> = []
+        _ = arr
+    }
+}
+
+func make() -> BabyTrackingService {
+    return BabyTrackingServiceImpl(store: InMemoryFeedingStore())
+}
+`)
+	result, err := ParseSource(src, "test.swift", "swift", lang.Default.TreeSitter("swift"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Type annotation refs: `let store: FeedingStore`, `let attrs: FeedingActivityAttributes`.
+	if findRef(result.Refs, "FeedingStore") == nil {
+		t.Error("expected FeedingStore ref from type annotation")
+	}
+	if findRef(result.Refs, "FeedingActivityAttributes") == nil {
+		t.Error("expected FeedingActivityAttributes ref from type annotation")
+	}
+
+	// Generic / array / dictionary element types.
+	if findRef(result.Refs, "FeedingKind") == nil {
+		t.Error("expected FeedingKind ref from array_type / generic")
+	}
+	if findRef(result.Refs, "BabyTrackingService") == nil {
+		t.Error("expected BabyTrackingService ref (inheritance or dictionary value)")
+	}
+
+	// Constructor / function calls.
+	if findRef(result.Refs, "BabyTrackingServiceImpl") == nil {
+		t.Error("expected BabyTrackingServiceImpl ref from call_expression")
+	}
+	if findRef(result.Refs, "InMemoryFeedingStore") == nil {
+		t.Error("expected InMemoryFeedingStore ref from nested call_expression")
+	}
+
+	// Navigation-expression call: `store.persist(event)` → persist.
+	if findRef(result.Refs, "persist") == nil {
+		t.Error("expected persist ref from store.persist(event)")
+	}
+
+	// Parameter type.
+	if findRef(result.Refs, "FeedingEvent") == nil {
+		t.Error("expected FeedingEvent ref from parameter type")
+	}
+
+	// Function return type.
+	// (BabyTrackingService is also the protocol's name — confirmed via any occurrence.)
+}
+
 // --- C Language Feature Tests ---
 
 func TestFeatureCRefs(t *testing.T) {

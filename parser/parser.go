@@ -140,6 +140,8 @@ func (e *symbolExtractor) extractImport(node *sitter.Node) (symbols.Import, bool
 		return e.extractImportProtobuf(nodeType, node)
 	case "dart":
 		return e.extractImportDart(nodeType, node)
+	case "swift":
+		return e.extractImportSwift(nodeType, node)
 	}
 	return symbols.Import{}, false
 }
@@ -280,6 +282,8 @@ func (e *symbolExtractor) extractRef(node *sitter.Node) (symbols.Ref, bool) {
 		return e.extractRefElixir(nodeType, node)
 	case "dart":
 		return e.extractRefDart(nodeType, node)
+	case "swift":
+		return e.extractRefSwift(nodeType, node)
 	}
 	return symbols.Ref{}, false
 }
@@ -581,6 +585,8 @@ func (e *symbolExtractor) classifyNode(nodeType string, node *sitter.Node) (stri
 		return e.classifyProtobuf(nodeType, node)
 	case "dart":
 		return e.classifyDart(nodeType, node)
+	case "swift":
+		return e.classifySwift(nodeType, node)
 	default:
 		return e.classifyGeneric(nodeType, node)
 	}
@@ -1185,6 +1191,193 @@ func (e *symbolExtractor) extractRefDart(nodeType string, node *sitter.Node) (sy
 	return symbols.Ref{}, false
 }
 
+// --- Swift ---
+
+func (e *symbolExtractor) extractImportSwift(nodeType string, node *sitter.Node) (symbols.Import, bool) {
+	if nodeType != "import_declaration" {
+		return symbols.Import{}, false
+	}
+	// `import Foundation` → identifier(simple_identifier("Foundation"))
+	if id := findChildByType(node, "identifier"); id != nil {
+		return symbols.Import{RawPath: strings.TrimSpace(id.Content(e.src)), Language: e.lang}, true
+	}
+	return symbols.Import{RawPath: strings.TrimSpace(node.Content(e.src)), Language: e.lang}, true
+}
+
+// extractRefSwift emits refs for call expressions and named type uses.
+// tree-sitter-swift exposes named types as `user_type` in annotations,
+// inheritance specifiers, generics, parameter types, and return types —
+// trigger once per `user_type` and each nested occurrence is visited
+// independently by the walker.
+func (e *symbolExtractor) extractRefSwift(nodeType string, node *sitter.Node) (symbols.Ref, bool) {
+	line := int(node.StartPoint().Row) + 1
+	switch nodeType {
+	case "call_expression":
+		if node.ChildCount() == 0 {
+			return symbols.Ref{}, false
+		}
+		if name := swiftCalleeName(node.Child(0), e.src); name != "" {
+			return symbols.Ref{Name: name, Line: line, Language: e.lang}, true
+		}
+	case "user_type":
+		if id := findChildByType(node, "type_identifier"); id != nil {
+			return symbols.Ref{Name: id.Content(e.src), Line: line, Language: e.lang}, true
+		}
+	}
+	return symbols.Ref{}, false
+}
+
+// swiftCalleeName resolves the callable name from a call_expression's first child.
+// Handles bare identifiers (`Foo()`) and navigation expressions (`x.y.z()` → `z`).
+func swiftCalleeName(node *sitter.Node, src []byte) string {
+	switch node.Type() {
+	case "simple_identifier":
+		return node.Content(src)
+	case "navigation_expression":
+		var lastSuffix *sitter.Node
+		for i := range int(node.ChildCount()) {
+			c := node.Child(i)
+			if c.Type() == "navigation_suffix" {
+				lastSuffix = c
+			}
+		}
+		if lastSuffix != nil {
+			if id := findChildByType(lastSuffix, "simple_identifier"); id != nil {
+				return id.Content(src)
+			}
+		}
+	}
+	return ""
+}
+
+// classifySwift recognizes Swift declarations. tree-sitter-swift collapses
+// struct/class/enum/extension into a single `class_declaration` node, so we
+// disambiguate by the leading keyword.
+func (e *symbolExtractor) classifySwift(nodeType string, node *sitter.Node) (string, *sitter.Node) {
+	switch nodeType {
+	case "class_declaration":
+		return swiftClassKindAndName(node)
+	case "protocol_declaration":
+		return "protocol", findChildByType(node, "type_identifier")
+	case "function_declaration", "protocol_function_declaration":
+		kind := "function"
+		if swiftInsideTypeBody(node) {
+			kind = "method"
+		}
+		return kind, findChildByType(node, "simple_identifier")
+	case "init_declaration":
+		return "constructor", findChildByType(node, "init")
+	case "deinit_declaration":
+		return "destructor", findChildByType(node, "deinit")
+	case "property_declaration":
+		var nameNode *sitter.Node
+		if pat := findChildByType(node, "pattern"); pat != nil {
+			nameNode = findChildByType(pat, "simple_identifier")
+		}
+		kind := "variable"
+		switch {
+		case swiftInsideTypeBody(node):
+			kind = "field"
+		case swiftPropertyIsLet(node):
+			kind = "constant"
+		}
+		return kind, nameNode
+	case "enum_entry":
+		return "enum_member", findChildByType(node, "simple_identifier")
+	case "typealias_declaration":
+		return "type", findChildByType(node, "type_identifier")
+	}
+	return "", nil
+}
+
+// swiftClassKindAndName reads the leading keyword of a class_declaration to
+// distinguish struct/class/enum/extension. For extensions the name lives one
+// level deeper, under `user_type`.
+func swiftClassKindAndName(node *sitter.Node) (string, *sitter.Node) {
+	var kind string
+	for i := range int(node.ChildCount()) {
+		c := node.Child(i)
+		switch c.Type() {
+		case "struct":
+			kind = "struct"
+		case "class":
+			kind = "class"
+		case "enum":
+			kind = "enum"
+		case "extension":
+			kind = "extension"
+		}
+		if kind != "" {
+			break
+		}
+	}
+	if kind == "" {
+		return "", nil
+	}
+	if kind == "extension" {
+		if ut := findChildByType(node, "user_type"); ut != nil {
+			if id := findChildByType(ut, "type_identifier"); id != nil {
+				return kind, id
+			}
+		}
+		return "", nil
+	}
+	return kind, findChildByType(node, "type_identifier")
+}
+
+// swiftInsideTypeBody reports whether a declaration's direct parent is a
+// class/struct/enum body or a protocol body (i.e. it's a member, not top-level).
+func swiftInsideTypeBody(node *sitter.Node) bool {
+	p := node.Parent()
+	if p == nil {
+		return false
+	}
+	switch p.Type() {
+	case "class_body", "protocol_body", "enum_class_body":
+		return true
+	}
+	return false
+}
+
+// swiftPropertyIsLet reports whether a top-level property_declaration uses
+// `let` (constant binding) vs `var` (variable binding).
+func swiftPropertyIsLet(node *sitter.Node) bool {
+	vbp := findChildByType(node, "value_binding_pattern")
+	if vbp == nil {
+		return false
+	}
+	return findChildByType(vbp, "let") != nil
+}
+
+// swiftSignature slices the parenthesized parameter list plus any return
+// clause, stopping at the function body (or EOF for protocol requirements).
+func swiftSignature(node *sitter.Node, src []byte) string {
+	var openParen, body *sitter.Node
+	for i := range int(node.ChildCount()) {
+		c := node.Child(i)
+		switch c.Type() {
+		case "(":
+			if openParen == nil {
+				openParen = c
+			}
+		case "function_body":
+			body = c
+		}
+	}
+	if openParen == nil {
+		return ""
+	}
+	start := openParen.StartByte()
+	end := node.EndByte()
+	if body != nil {
+		end = body.StartByte()
+	}
+	if end <= start || int(end) > len(src) {
+		return ""
+	}
+	return strings.TrimSpace(string(src[start:end]))
+}
+
 func (e *symbolExtractor) classifyGeneric(nodeType string, node *sitter.Node) (string, *sitter.Node) {
 	switch nodeType {
 	case "function_definition", "function_declaration":
@@ -1199,7 +1392,10 @@ func (e *symbolExtractor) classifyGeneric(nodeType string, node *sitter.Node) (s
 
 func (e *symbolExtractor) extractSignature(node *sitter.Node, kind string) string {
 	switch kind {
-	case "function", "method", "constructor", "getter", "setter":
+	case "function", "method", "constructor", "destructor", "getter", "setter":
+		if e.lang == "swift" {
+			return swiftSignature(node, e.src)
+		}
 		var sig string
 
 		// Parameters: try field name first, then language-specific node types.

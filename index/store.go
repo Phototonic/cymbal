@@ -742,7 +742,10 @@ func (s *Store) SearchSymbolsCI(name string, limit int) ([]SymbolResult, error) 
 }
 
 // SearchSymbols searches using FTS5 with ranking: exact > prefix > fuzzy.
-func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) ([]SymbolResult, error) {
+// When ignoreCase is true and exact is true, the name comparison is
+// case-insensitive (FTS5 tokenization is already case-insensitive for the
+// non-exact path, so ignoreCase is a no-op there).
+func (s *Store) SearchSymbols(query, kind, lang string, exact, ignoreCase bool, limit int) ([]SymbolResult, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -750,9 +753,13 @@ func (s *Store) SearchSymbols(query, kind, lang string, exact bool, limit int) (
 	fetch := rankFetchWindow(limit, exact)
 
 	if exact {
+		nameClause := "s.name = ?"
+		if ignoreCase {
+			nameClause = "s.name = ? COLLATE NOCASE"
+		}
 		q := `SELECT s.name, s.kind, f.path, f.rel_path, s.start_line, s.end_line, s.parent, s.depth, s.signature, s.language
 			  FROM symbols s JOIN files f ON s.file_id = f.id
-			  WHERE s.name = ?`
+			  WHERE ` + nameClause
 		args := []any{query}
 		if kind != "" {
 			q += " AND s.kind = ?"

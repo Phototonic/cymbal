@@ -25,6 +25,7 @@ Results are ranked: exact match > prefix > fuzzy.`,
 		limit, _ := cmd.Flags().GetInt("limit")
 		lang, _ := cmd.Flags().GetString("lang")
 		exact, _ := cmd.Flags().GetBool("exact")
+		ignoreCase, _ := cmd.Flags().GetBool("ignore-case")
 		textMode, _ := cmd.Flags().GetBool("text")
 		includes, _ := cmd.Flags().GetStringArray("path")
 		excludes, _ := cmd.Flags().GetStringArray("exclude")
@@ -35,11 +36,12 @@ Results are ranked: exact match > prefix > fuzzy.`,
 		}
 
 		results, err := index.SearchSymbols(dbPath, index.SearchQuery{
-			Text:     query,
-			Kind:     kind,
-			Language: lang,
-			Exact:    exact,
-			Limit:    widenPathFilterLimit(limit, hasFilters),
+			Text:       query,
+			Kind:       kind,
+			Language:   lang,
+			Exact:      exact,
+			IgnoreCase: ignoreCase,
+			Limit:      widenPathFilterLimit(limit, hasFilters),
 		})
 		if err != nil {
 			return err
@@ -79,6 +81,7 @@ func init() {
 	searchCmd.Flags().IntP("limit", "n", 20, "max results")
 	searchCmd.Flags().StringP("lang", "l", "", "filter by language (go, python, typescript, etc.)")
 	searchCmd.Flags().BoolP("exact", "e", false, "exact name match only")
+	searchCmd.Flags().BoolP("ignore-case", "i", false, "case-insensitive match (applies to --exact)")
 	searchCmd.Flags().BoolP("text", "t", false, "full-text grep across file contents")
 	searchCmd.Flags().StringArray("path", nil, "include only results whose path matches this glob (repeatable)")
 	searchCmd.Flags().StringArray("exclude", nil, "exclude results whose path matches this glob (repeatable)")

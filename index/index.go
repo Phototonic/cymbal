@@ -41,11 +41,12 @@ type Stats struct {
 
 // SearchQuery defines a search request.
 type SearchQuery struct {
-	Text     string
-	Kind     string
-	Language string
-	Exact    bool
-	Limit    int
+	Text       string
+	Kind       string
+	Language   string
+	Exact      bool
+	IgnoreCase bool
+	Limit      int
 }
 
 // TextResult holds a text search match.
@@ -578,7 +579,7 @@ func SearchSymbols(dbPath string, q SearchQuery) ([]SymbolResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return store.SearchSymbols(q.Text, q.Kind, q.Language, q.Exact, q.Limit)
+	return store.SearchSymbols(q.Text, q.Kind, q.Language, q.Exact, q.IgnoreCase, q.Limit)
 }
 
 // RepoStats returns overview statistics for the repo in the given database.
@@ -712,7 +713,7 @@ func SymbolContext(dbPath, symbolName string, callerLimit int) (*ContextResult, 
 	}
 
 	// Resolve symbol by exact name.
-	results, err := store.SearchSymbols(symbolName, "", "", true, 100)
+	results, err := store.SearchSymbols(symbolName, "", "", true, false, 100)
 	if err != nil {
 		return nil, err
 	}
@@ -798,7 +799,7 @@ func Investigate(dbPath, symbolName string, opts ...InvestigateOpts) (*Investiga
 		return nil, err
 	}
 
-	results, err := store.SearchSymbols(symbolName, "", "", true, 100)
+	results, err := store.SearchSymbols(symbolName, "", "", true, false, 100)
 	if err != nil {
 		return nil, err
 	}
@@ -942,7 +943,7 @@ func SearchSymbolsFlex(dbPath, name string, limit int) ([]SymbolResult, error) {
 	}
 
 	// Fall back to FTS prefix match.
-	return store.SearchSymbols(name, "", "", false, limit)
+	return store.SearchSymbols(name, "", "", false, false, limit)
 }
 
 // SymbolsByName finds symbols by exact name (for show command).
@@ -961,5 +962,5 @@ func SymbolsByName(dbPath, name string) ([]SymbolResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return store.SearchSymbols(name, "", "", true, 100)
+	return store.SearchSymbols(name, "", "", true, false, 100)
 }
