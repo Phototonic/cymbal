@@ -574,12 +574,133 @@ repos:
           search:
             exact: true
             expected:
+              # struct + bare `impl SearchWorker { ... }` — generics-stripped
+              # impl blocks exact-match SearchWorker under the v0.11.1 parser.
               - file: "crates/core/search.rs"
                 line: 233
                 kind: "struct"
+              - file: "crates/core/search.rs"
+                line: 242
+                kind: "impl"
           show:
             file: "crates/core/search.rs"
             line: 233
+      # Rust trait impls: Sink has concrete impls (JSONSink, StandardSink,
+      # SummarySink), wrapper impls (UTF8, Lossy, Bytes), blanket impls on
+      # references (&mut S, Box<S>), and test-only impls (KitchenSink). All
+      # should appear. Implementer names must be the bare type (`JSONSink`,
+      # not `JSONSink<'p, 's, M, W>`), otherwise `--of Type` can't find them.
+      - name: Sink
+        file_contains: "sink.rs"
+        kind: trait
+        show_contains: "trait Sink"
+        refs_min: 0
+        ground_truth:
+          search:
+            exact: true
+            canonical:
+              file: "crates/searcher/src/sink.rs"
+              line: 102
+              kind: "trait"
+            prefer_paths:
+              - "crates/searcher/src/sink.rs"
+            expected:
+              - file: "crates/searcher/src/sink.rs"
+                line: 102
+                kind: "trait"
+          show:
+            file: "crates/searcher/src/sink.rs"
+            line: 102
+          impls:
+            expected:
+              - implementer: "JSONSink"
+                file: "crates/printer/src/json.rs"
+              - implementer: "StandardSink"
+                file: "crates/printer/src/standard.rs"
+              - implementer: "SummarySink"
+                file: "crates/printer/src/summary.rs"
+              - implementer: "UTF8"
+                file: "crates/searcher/src/sink.rs"
+              - implementer: "Lossy"
+                file: "crates/searcher/src/sink.rs"
+              - implementer: "Bytes"
+                file: "crates/searcher/src/sink.rs"
+              - implementer: "KitchenSink"
+                file: "crates/searcher/src/testutil.rs"
+              # Blanket impls on reference / wrapper types. ripgrep has
+              # `impl<S: Sink> Sink for &mut S` and `impl<S: Sink> Sink for Box<S>`.
+              # The "name" here is the reference/wrapper expression as it
+              # appears syntactically — an agent reading this knows blanket
+              # impls cover any S, but cymbal records the literal type text.
+              - implementer: "&'a mut S"
+                file: "crates/searcher/src/sink.rs"
+              - implementer: "Box"
+                file: "crates/searcher/src/sink.rs"
+      # Inverse direction: --of JSONSink must resolve through the impl block,
+      # not just the struct declaration. Generics in the impl header
+      # (`impl ... for JSONSink<'p, 's, M, W>`) must be stripped for this to
+      # work — that's why `expected` here is exactly one `Sink` edge at the
+      # impl site, not at the struct site.
+      # Matcher is a core ripgrep trait with 6 implementors spread across
+      # 4 crates (matcher, pcre2, regex, searcher). Three of them share the
+      # name `RegexMatcher` defined in different crates — this is the hard
+      # case: cymbal must return all three, not collapse them. The blanket
+      # impl for `&'a M` also appears.
+      - name: Matcher
+        file_contains: "matcher/src/lib.rs"
+        kind: trait
+        show_contains: "trait Matcher"
+        refs_min: 0
+        ground_truth:
+          search:
+            exact: true
+            expected:
+              - file: "crates/matcher/src/lib.rs"
+                line: 537
+                kind: "trait"
+          impls:
+            expected:
+              # Three separate RegexMatcher types across pcre2, regex,
+              # and the matcher's own test utilities + searcher test utils.
+              - implementer: "RegexMatcher"
+                file: "crates/matcher/tests/util.rs"
+              - implementer: "RegexMatcherNoCaps"
+                file: "crates/matcher/tests/util.rs"
+              - implementer: "RegexMatcher"
+                file: "crates/pcre2/src/matcher.rs"
+              - implementer: "RegexMatcher"
+                file: "crates/regex/src/matcher.rs"
+              - implementer: "RegexMatcher"
+                file: "crates/searcher/src/testutil.rs"
+              - implementer: "&'a M"
+                file: "crates/matcher/src/lib.rs"
+      - name: JSONSink
+        file_contains: "json.rs"
+        kind: struct
+        show_contains: "struct JSONSink"
+        refs_min: 0
+        ground_truth:
+          search:
+            exact: true
+            expected:
+              # struct + both impl blocks. Two impls (inherent methods +
+              # `impl Sink for JSONSink<...>`) both exact-match the bare name.
+              - file: "crates/printer/src/json.rs"
+                line: 560
+                kind: "struct"
+              - file: "crates/printer/src/json.rs"
+                line: 572
+                kind: "impl"
+              - file: "crates/printer/src/json.rs"
+                line: 684
+                kind: "impl"
+          impls:
+            of: "JSONSink"
+            expected:
+              # In --of mode the "implementer" key is compared against the
+              # edge target (what the queried type implements), per primaryName.
+              - implementer: "Sink"
+                file: "crates/printer/src/json.rs"
     footguns:
       - name: builder_and_impl_searcher
         symbol: Searcher

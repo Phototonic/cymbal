@@ -205,6 +205,38 @@ impl Reader for Cache {
 	}
 }
 
+// TestImplementsRustGenericType covers `impl Trait for Foo<T>` — the symbol
+// name for the impl block must be the bare `Foo`, not `Foo<T>`, so that
+// `cymbal impls --of Foo` resolves impl blocks with generic parameters.
+func TestImplementsRustGenericType(t *testing.T) {
+	src := []byte(`struct JSONSink<'p, 's, M, W> {
+    _marker: std::marker::PhantomData<(&'p M, &'s W)>,
+}
+
+impl<'p, 's, M, W> Sink for JSONSink<'p, 's, M, W>
+where M: Matcher, W: std::io::Write
+{
+}
+`)
+	result := parseOrFail(t, src, "json.rs", "rust")
+	var implSymFound bool
+	for _, s := range result.Symbols {
+		if s.Kind == "impl" && s.Name == "JSONSink" {
+			implSymFound = true
+			break
+		}
+	}
+	if !implSymFound {
+		var names []string
+		for _, s := range result.Symbols {
+			if s.Kind == "impl" {
+				names = append(names, s.Name)
+			}
+		}
+		t.Errorf("expected an impl symbol with bare name 'JSONSink' (generics stripped); got impl names %v", names)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Kotlin
 // ---------------------------------------------------------------------------

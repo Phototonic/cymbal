@@ -123,6 +123,118 @@ func TestFindImplementsInverse(t *testing.T) {
 	}
 }
 
+// TestFindImplementsSkipsNestedTypeConformances guards against the over-report
+// bug where `--of OuterClass` would surface conformances of types nested
+// inside it (e.g. Swift `class Session { struct Inner: Proto {} }` must not
+// report Proto as one of Session's conformances). The fix: require the
+// queried symbol to be the smallest enclosing type-like symbol at the ref's
+// line.
+func TestFindImplementsSkipsNestedTypeConformances(t *testing.T) {
+	store, _ := newTestStore(t)
+	now := time.Now()
+
+	fid, err := store.UpsertFile("/repo/Session.swift", "Session.swift", "swift", "h", now, 400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Session spans 1-100 and conforms to Sendable on its own declaration line.
+	// A private nested struct RequestConvertible (lines 50-60) conforms to
+	// URLRequestConvertible. --of Session must return only Sendable.
+	if err := store.InsertSymbols(fid, []symbols.Symbol{
+		{Name: "Session", Kind: "class", File: "/repo/Session.swift", StartLine: 1, EndLine: 100, Language: "swift"},
+		{Name: "RequestConvertible", Kind: "struct", File: "/repo/Session.swift", StartLine: 50, EndLine: 60, Language: "swift"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertRefs(fid, []symbols.Ref{
+		{Name: "Sendable", Line: 1, Language: "swift", Kind: symbols.RefKindImplements},
+		{Name: "URLRequestConvertible", Line: 50, Language: "swift", Kind: symbols.RefKindImplements},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// --of Session: should only see Sendable, NOT URLRequestConvertible.
+	outer, err := store.FindImplements("Session", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outer) != 1 {
+		t.Fatalf("expected 1 conformance on Session, got %d (%+v)", len(outer), outer)
+	}
+	if outer[0].Target != "Sendable" {
+		t.Errorf("expected target=Sendable, got %q", outer[0].Target)
+	}
+
+	// --of RequestConvertible: should see URLRequestConvertible.
+	inner, err := store.FindImplements("RequestConvertible", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inner) != 1 {
+		t.Fatalf("expected 1 conformance on RequestConvertible, got %d (%+v)", len(inner), inner)
+	}
+	if inner[0].Target != "URLRequestConvertible" {
+		t.Errorf("expected target=URLRequestConvertible, got %q", inner[0].Target)
+	}
+}
+
+// TestFindImplementorsRustImplBlock covers the Rust-specific shape where the
+// conformance lives in a separate `impl Trait for Type { }` block rather than
+// on the type's declaration. The impl_item is indexed as kind=impl with
+// name=Type, and both directions (who implements X, what does Type implement)
+// must resolve through it.
+func TestFindImplementorsRustImplBlock(t *testing.T) {
+	store, _ := newTestStore(t)
+	now := time.Now()
+
+	fid, err := store.UpsertFile("/repo/frame.rs", "frame.rs", "rust", "h", now, 120)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// struct Frame lives at lines 1-5; its `impl std::error::Error for Frame`
+	// block lives separately at lines 10-12. In Rust, conformances are never
+	// inside the struct body — they attach to the impl_item.
+	if err := store.InsertSymbols(fid, []symbols.Symbol{
+		{Name: "Frame", Kind: "struct", File: "/repo/frame.rs", StartLine: 1, EndLine: 5, Language: "rust"},
+		{Name: "Frame", Kind: "impl", File: "/repo/frame.rs", StartLine: 10, EndLine: 12, Language: "rust"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertRefs(fid, []symbols.Ref{
+		{Name: "Error", Line: 10, Language: "rust", Kind: symbols.RefKindImplements},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Incoming: who implements Error? → Frame, via its impl block.
+	in, err := store.FindImplementors("Error", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(in) != 1 {
+		t.Fatalf("expected 1 implementor of Error, got %d (%+v)", len(in), in)
+	}
+	if in[0].Implementer != "Frame" {
+		t.Errorf("expected implementer=Frame (resolved via impl block), got %q", in[0].Implementer)
+	}
+
+	// Outgoing: what does Frame implement? → Error, found via the impl block
+	// even though `struct Frame` itself has no implements refs inside its body.
+	out, err := store.FindImplements("Frame", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 implements edge from Frame, got %d (%+v)", len(out), out)
+	}
+	if out[0].Target != "Error" {
+		t.Errorf("expected target=Error, got %q", out[0].Target)
+	}
+	if out[0].Implementer != "Frame" {
+		t.Errorf("expected implementer=Frame, got %q", out[0].Implementer)
+	}
+}
+
 // TestFindTraceDefaultFiltersToCallKind is the regression for the Swift noise
 // problem: type mentions (Kind=use) must not surface as trace edges by default.
 func TestFindTraceDefaultFiltersToCallKind(t *testing.T) {

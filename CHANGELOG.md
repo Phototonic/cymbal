@@ -4,6 +4,19 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-04-18
+
+### Fixed
+
+- **`cymbal impls` on Rust** — `impl Trait for Type { }` edges now resolve the implementer name instead of returning `(anonymous)`, and `cymbal impls --of Type` now walks through separate `impl` blocks to find conformances. Previously the SQL that resolves the owning symbol of an implements-ref excluded Rust's `impl` kind, so `cymbal impls Error` in mini-redis returned `(anonymous) (anonymous)` and `cymbal impls --of Frame` returned no edges at all.
+- **`cymbal impls --of <outer>` no longer over-reports conformances from nested types** — in Swift (and any language where types nest), a big outer class like Alamofire's `Session` was attributing conformances of nested private types (e.g. `struct RequestConvertible: URLRequestConvertible`) to the outer. `--of Session` now correctly returns only the outer's direct conformances (just `Sendable`), matching `FindImplementors`' existing smallest-enclosing-symbol logic.
+- **Rust `impl Foo<T>` blocks now index under the bare name `Foo`** — the parser previously stored the generic form verbatim (`impl Foo<T, U>`), so `cymbal impls --of Foo` missed blocks with generic parameters. Stripping generics at classification time means ripgrep's `impl Sink for JSONSink<'p, 's, M, W>` now correctly resolves under `JSONSink`.
+
+### Changed
+
+- **Stricter bench ground truth** — added trait-impls cases for ripgrep (`Sink` with 9 implementors across 3 crates including blanket impls on `&mut S` and `Box<S>`; `Matcher` with 3 same-named `RegexMatcher` types across pcre2/regex/testutils; `JSONSink` inverse `--of` direction). Pushed total ground-truth checks from 59 to 61; cymbal passes all 61. Also tightened existing `JSONSink` and `SearchWorker` search expectations to include their bare-named `impl` blocks.
+- **Bench internals refactored** — `executeBench`, `generateReport`, and `tunedGrepScore` split into per-phase / per-section / per-concern helpers. All three dropped from 32–39 cyclomatic complexity to single-digit (under the repo's pre-commit threshold of 30).
+
 ## [0.11.0] - 2026-04-18
 
 ### Added

@@ -1093,7 +1093,7 @@ func (s *Store) FindImplementors(target string, limit int) ([]ImplementorResult,
 				WHERE s.file_id = r.file_id
 				  AND s.start_line <= r.line
 				  AND s.end_line   >= r.line
-				  AND s.kind IN ('class','struct','enum','interface','protocol','trait','record','object','mixin','actor')
+				  AND s.kind IN ('class','struct','enum','interface','protocol','trait','record','object','mixin','actor','impl')
 				ORDER BY (s.end_line - s.start_line) ASC
 				LIMIT 1
 			), '') AS implementer,
@@ -1128,7 +1128,12 @@ func (s *Store) FindImplementors(target string, limit int) ([]ImplementorResult,
 // FindImplements returns the inheritance / conformance edges declared by a
 // specific type (the inverse of FindImplementors). It resolves the type's
 // declaration line range via the symbols table, then returns implements-kind
-// refs inside that range.
+// refs inside that range — but only when the queried type is the *smallest*
+// enclosing type-like symbol at the ref's line. That constraint prevents
+// over-reporting when a big outer class contains nested types whose
+// conformances would otherwise be attributed to the outer (e.g. Swift
+// `class Session { struct RequestConvertible: URLRequestConvertible {} }` —
+// `--of Session` must not return URLRequestConvertible).
 func (s *Store) FindImplements(typeName string, limit int) ([]ImplementorResult, error) {
 	if limit <= 0 {
 		limit = 100
@@ -1147,8 +1152,16 @@ func (s *Store) FindImplements(typeName string, limit int) ([]ImplementorResult,
 		 AND r.line BETWEEN s.start_line AND s.end_line
 		JOIN files f ON f.id = s.file_id
 		WHERE s.name = ?
-		  AND s.kind IN ('class','struct','enum','interface','protocol','trait','record','object','mixin','actor')
+		  AND s.kind IN ('class','struct','enum','interface','protocol','trait','record','object','mixin','actor','impl')
 		  AND r.kind = ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM symbols s3
+			WHERE s3.file_id = r.file_id
+			  AND s3.start_line <= r.line
+			  AND s3.end_line   >= r.line
+			  AND s3.kind IN ('class','struct','enum','interface','protocol','trait','record','object','mixin','actor','impl')
+			  AND (s3.end_line - s3.start_line) < (s.end_line - s.start_line)
+		  )
 		ORDER BY f.rel_path, r.line
 		LIMIT ?
 	`, typeName, symbols.RefKindImplements, limit)

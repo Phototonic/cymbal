@@ -750,7 +750,17 @@ func (e *symbolExtractor) classifyRust(nodeType string, node *sitter.Node) (stri
 	case "trait_item":
 		return "trait", node.ChildByFieldName("name")
 	case "impl_item":
-		return "impl", node.ChildByFieldName("type")
+		// `impl Foo<T, U> for ...` — the `type` field points at a
+		// generic_type wrapper whose own `type` field holds the bare
+		// identifier. Descend so the symbol name is `Foo`, not `Foo<T, U>`,
+		// so `impls --of Foo` matches both `struct Foo` and all impl blocks.
+		typeNode := node.ChildByFieldName("type")
+		if typeNode != nil && typeNode.Type() == "generic_type" {
+			if inner := typeNode.ChildByFieldName("type"); inner != nil {
+				typeNode = inner
+			}
+		}
+		return "impl", typeNode
 	case "type_item":
 		return "type", node.ChildByFieldName("name")
 	case "const_item":
