@@ -132,6 +132,7 @@ The index auto-builds on first use — no manual `cymbal index .` required. Subs
 | `impact` | Transitive callers — what's affected by a change? |
 | `diff` | Git diff scoped to a symbol's line range |
 | `context` | Bundled view: source + types + callers + imports |
+| `hook` | Agent-integration hooks — `nudge`, `remind`, `install <agent>` |
 
 Commands that accept symbols support **batch**: `cymbal investigate Foo Bar Baz` runs all three in one invocation.
 
@@ -182,6 +183,29 @@ Run all cymbal commands as: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1bro
 - The SQLite index is stored at `.cymbal/index.db` inside the mounted repo (via `CYMBAL_DB`).
 - All commands support `--json` for structured output.
 ```
+
+### Agent hooks
+
+Prompting works, but agents drift back to `grep`/`find` as context grows (see [issue #23](https://github.com/1broseidon/cymbal/issues/23)). Cymbal ships three small, agent-agnostic hook commands:
+
+| Command | What it does |
+|---|---|
+| `cymbal hook nudge` | Inspect a would-be shell command and, if it looks like a code search, emit a short system-message suggesting the cymbal equivalent. Never blocks. |
+| `cymbal hook remind` | Print a tone-calibrated reminder block agents can inject at session start or on a trigger. |
+| `cymbal hook install <agent>` | Wire the above into the agent's native hook points. `uninstall` reverses it. `--dry-run` shows the diff. |
+
+**One-liner install:**
+
+```bash
+cymbal hook install claude-code           # ~/.claude/settings.json (user scope)
+cymbal hook install claude-code --scope project   # .claude/settings.json
+cymbal hook install cursor                # .cursor/rules/cymbal.md
+cymbal hook install windsurf              # .windsurfrules
+```
+
+Installers are idempotent, preserve unrelated config, and mark their own entries so `cymbal hook uninstall <agent>` cleans up without touching anything you added yourself.
+
+Any runtime that can shell out on a pre-tool or pre-prompt event can also consume `cymbal hook nudge --format=text` (stderr suggestion) or `--format=json` (structured payload) directly. Claude Code's `PreToolUse` + `UserPromptSubmit` get full JSON treatment; Cursor and Windsurf get a marker-delimited block in their rules file.
 
 ### Why this works
 
