@@ -4,6 +4,8 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-04-18
+
 ### Added
 
 - **`cymbal impls <symbol>`** — find types that implement / conform to / extend a protocol, interface, trait, or base class. Language-agnostic: Swift protocol conformance, Go interface embedding, Java/C#/Kotlin/TypeScript implements clauses, Scala extends/with, Rust `impl Trait for Type`, Dart interfaces/mixins, Python base classes, Ruby `include`/`extend`/`<`, PHP implements, and C++ base classes all register as implements-kind refs. External framework targets (e.g. `LiveActivityIntent` from ActivityKit) are stored by name and returned with `resolved=false`. Supports `--of <type>` for the inverse direction ("what does this type implement?"), `--resolved` / `--unresolved` filters, plus the standard `--lang`, `--path`, `--exclude`, `--json` flags.
