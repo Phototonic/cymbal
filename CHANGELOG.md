@@ -4,7 +4,12 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
-## [0.11.1] - 2026-04-18
+## [0.11.2] - 2026-04-18
+
+### Changed
+
+- **`cymbal hook install claude-code` wires the reminder to `SessionStart` instead of `UserPromptSubmit`** — the reminder now injects once per session (its intended purpose, per `cymbal hook remind --help`) rather than on every user prompt. Users saw the ~730-byte primer re-injected every turn, paying thousands of tokens over a long session for content that only changes meaning at session boundaries. `SessionStart` primes the agent once and stays out of the way after.
+- **Re-running the installer migrates pre-0.11.2 installs automatically** — `mergeClaudeHooks` now strips any prior cymbal-marked entries (including old `UserPromptSubmit` ones) before adding the new `SessionStart` entry. Unrelated hooks in either location are preserved via the marker-based filter.
 
 ### Fixed
 

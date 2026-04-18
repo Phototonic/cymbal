@@ -59,7 +59,7 @@ What it writes (merged into your existing `~/.claude/settings.json`):
         ]
       }
     ],
-    "UserPromptSubmit": [
+    "SessionStart": [
       {
         "hooks": [
           {"type": "command", "command": "cymbal hook remind --format=claude-code", "marker": "cymbal-hook", "timeout": 5}
@@ -73,9 +73,11 @@ What it writes (merged into your existing `~/.claude/settings.json`):
 - `PreToolUse` on `Bash` injects the nudge whenever the model is about to
   shell out. The nudge returns `decision: allow` so the command still
   runs — it just gets an inline system message next to it.
-- `UserPromptSubmit` prepends the reminder block to user prompts at
-  session start (and on every prompt; Claude Code renders it once per
-  turn).
+- `SessionStart` injects the reminder block exactly once at the start of
+  each session — the agent sees the cymbal primer up front and keeps the
+  context, without paying ~700 B of re-injected tokens on every user turn.
+  (Earlier versions wired this to `UserPromptSubmit`; re-running
+  `cymbal hook install claude-code` migrates old installs automatically.)
 - Both entries carry `marker: cymbal-hook` so `cymbal hook uninstall
   claude-code` finds and removes them without touching anything else
   you've added.

@@ -88,7 +88,7 @@ Formats:
   --format=text         (default) plain text
   --format=json         {"systemMessage": "..."} for agents that want JSON
   --format=claude-code  same as json, Claude Code accepts it via
-                        UserPromptSubmit hook additionalContext.`,
+                        SessionStart hook additionalContext.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, _ := cmd.Flags().GetString("format")
 		return emitRemind(cmd.OutOrStdout(), format)
@@ -590,11 +590,18 @@ func writeClaudeSettings(path string, s *claudeSettings) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+// claudeHookKeys lists every Claude Code hook point we've *ever* installed
+// into. Listed here (not inlined) so removeClaudeHooks sweeps old locations
+// too, which makes `install` safely migrate users who installed an earlier
+// version. v0.11.1 and earlier wired the reminder to UserPromptSubmit (fires
+// every turn); v0.11.2+ uses SessionStart (fires once per session).
+var claudeHookKeys = []string{"PreToolUse", "SessionStart", "UserPromptSubmit"}
+
 // claudeHookEntries returns the two hook entries we want installed:
-// PreToolUse on Bash (the nudge) and UserPromptSubmit (the reminder at
-// session start / user prompt). Marker field lets uninstall find us without
-// matching command strings exactly.
-func claudeHookEntries() (preTool, userPrompt map[string]any) {
+// PreToolUse on Bash (the nudge) and SessionStart (the reminder at session
+// start — fires once, not per turn). Marker field lets uninstall find us
+// without matching command strings exactly.
+func claudeHookEntries() (preTool, sessionStart map[string]any) {
 	preTool = map[string]any{
 		"matcher": "Bash",
 		"hooks": []any{
@@ -606,7 +613,7 @@ func claudeHookEntries() (preTool, userPrompt map[string]any) {
 			},
 		},
 	}
-	userPrompt = map[string]any{
+	sessionStart = map[string]any{
 		"hooks": []any{
 			map[string]any{
 				"type":    "command",
@@ -616,30 +623,34 @@ func claudeHookEntries() (preTool, userPrompt map[string]any) {
 			},
 		},
 	}
-	return preTool, userPrompt
+	return preTool, sessionStart
 }
 
-// mergeClaudeHooks installs our entries into settings.raw["hooks"],
-// skipping entries that already carry our marker so installs are idempotent.
+// mergeClaudeHooks installs our entries into settings.raw["hooks"]. It first
+// strips any prior cymbal-marked entries (including those from older hook
+// points like UserPromptSubmit) so a re-install migrates cleanly and stays
+// idempotent. Unrelated entries are preserved.
 func mergeClaudeHooks(s *claudeSettings) {
-	preTool, userPrompt := claudeHookEntries()
+	removeClaudeHooks(s)
+	preTool, sessionStart := claudeHookEntries()
 	hooks, _ := s.raw["hooks"].(map[string]any)
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
 	hooks["PreToolUse"] = appendUniqueHookGroup(hooks["PreToolUse"], preTool)
-	hooks["UserPromptSubmit"] = appendUniqueHookGroup(hooks["UserPromptSubmit"], userPrompt)
+	hooks["SessionStart"] = appendUniqueHookGroup(hooks["SessionStart"], sessionStart)
 	s.raw["hooks"] = hooks
 }
 
 // removeClaudeHooks drops any hook entries carrying our marker. Leaves other
-// user-added hooks untouched.
+// user-added hooks untouched. Sweeps every hook point in claudeHookKeys so
+// older installs (UserPromptSubmit-based) are migrated away.
 func removeClaudeHooks(s *claudeSettings) {
 	hooks, _ := s.raw["hooks"].(map[string]any)
 	if hooks == nil {
 		return
 	}
-	for _, key := range []string{"PreToolUse", "UserPromptSubmit"} {
+	for _, key := range claudeHookKeys {
 		arr, _ := hooks[key].([]any)
 		if arr == nil {
 			continue

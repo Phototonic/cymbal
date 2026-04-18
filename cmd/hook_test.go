@@ -231,9 +231,9 @@ func TestClaudeCodeInstallIsIdempotent(t *testing.T) {
 	if len(preTool) != 2 {
 		t.Fatalf("expected 2 PreToolUse entries (user + cymbal), got %d: %s", len(preTool), got)
 	}
-	userPrompt, _ := hooks["UserPromptSubmit"].([]any)
-	if len(userPrompt) != 1 {
-		t.Errorf("expected 1 UserPromptSubmit entry; got %d", len(userPrompt))
+	sessionStart, _ := hooks["SessionStart"].([]any)
+	if len(sessionStart) != 1 {
+		t.Errorf("expected 1 SessionStart entry; got %d", len(sessionStart))
 	}
 
 	// uninstall and confirm only our entries are removed.
@@ -255,8 +255,80 @@ func TestClaudeCodeInstallIsIdempotent(t *testing.T) {
 	if len(preTool) != 1 {
 		t.Errorf("expected user's single PreToolUse to survive; got %d entries\n%s", len(preTool), got)
 	}
-	if _, stillThere := hooks["UserPromptSubmit"]; stillThere {
-		t.Errorf("UserPromptSubmit should have been removed when empty; got %+v", hooks)
+	if _, stillThere := hooks["SessionStart"]; stillThere {
+		t.Errorf("SessionStart should have been removed when empty; got %+v", hooks)
+	}
+}
+
+// TestClaudeCodeInstallMigratesFromUserPromptSubmit verifies the v0.11.2
+// reminder hook-point move: users upgrading from 0.11.1 or earlier had
+// `cymbal hook remind` wired to UserPromptSubmit (fires every turn), which
+// this release moves to SessionStart (fires once per session). A re-install
+// must drop the old marker-tagged UserPromptSubmit entry and add a
+// SessionStart entry, without touching any non-cymbal entries the user has
+// added to either hook point.
+func TestClaudeCodeInstallMigratesFromUserPromptSubmit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	// Simulate a pre-0.11.2 install: the old UserPromptSubmit entry plus an
+	// unrelated user-owned UserPromptSubmit hook that must survive.
+	seed := map[string]any{
+		"hooks": map[string]any{
+			"UserPromptSubmit": []any{
+				map[string]any{
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "cymbal hook remind --format=claude-code",
+							"marker":  claudeHookMarker,
+							"timeout": 5,
+						},
+					},
+				},
+				map[string]any{
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "user-unrelated-hook"},
+					},
+				},
+			},
+		},
+	}
+	seedBytes, _ := json.Marshal(seed)
+	if err := os.WriteFile(path, seedBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := loadClaudeSettings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mergeClaudeHooks(s)
+	if err := writeClaudeSettings(path, s); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := os.ReadFile(path)
+	var parsed map[string]any
+	_ = json.Unmarshal(got, &parsed)
+	hooks, _ := parsed["hooks"].(map[string]any)
+
+	// Old UserPromptSubmit marker entry must be gone; unrelated user entry stays.
+	userPrompt, _ := hooks["UserPromptSubmit"].([]any)
+	if len(userPrompt) != 1 {
+		t.Fatalf("expected user's unrelated UserPromptSubmit to survive alone; got %d entries\n%s", len(userPrompt), got)
+	}
+	if hookGroupHasMarker(userPrompt[0], claudeHookMarker) {
+		t.Errorf("old cymbal UserPromptSubmit entry should have been removed; got %s", got)
+	}
+
+	// New SessionStart entry must exist.
+	sessionStart, _ := hooks["SessionStart"].([]any)
+	if len(sessionStart) != 1 {
+		t.Fatalf("expected 1 SessionStart entry after migration; got %d\n%s", len(sessionStart), got)
+	}
+	if !hookGroupHasMarker(sessionStart[0], claudeHookMarker) {
+		t.Errorf("expected cymbal SessionStart entry; got %s", got)
 	}
 }
 
