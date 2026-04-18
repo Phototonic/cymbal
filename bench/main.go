@@ -35,16 +35,17 @@ type Corpus struct {
 }
 
 type Repo struct {
-	Name       string        `yaml:"name"`
-	URL        string        `yaml:"url"`
-	Ref        string        `yaml:"ref"`
-	Language   string        `yaml:"language"`
-	Tier       string        `yaml:"tier"`
-	Complexity string        `yaml:"complexity"`
-	Subset     string        `yaml:"subset"`
-	Tags       []string      `yaml:"tags"`
-	Symbols    []Symbol      `yaml:"symbols"`
-	Footguns   []FootgunCase `yaml:"footguns"`
+	Name       string                 `yaml:"name"`
+	URL        string                 `yaml:"url"`
+	Ref        string                 `yaml:"ref"`
+	Language   string                 `yaml:"language"`
+	Tier       string                 `yaml:"tier"`
+	Complexity string                 `yaml:"complexity"`
+	Subset     string                 `yaml:"subset"`
+	Tags       []string               `yaml:"tags"`
+	Symbols    []Symbol               `yaml:"symbols"`
+	Footguns   []FootgunCase          `yaml:"footguns"`
+	MultiCases []GroundTruthMultiCase `yaml:"multi_cases"`
 }
 
 type Symbol struct {

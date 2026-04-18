@@ -22,6 +22,35 @@ type GroundTruthSpec struct {
 	Trace  *GroundTruthTraceSpec  `yaml:"trace"`
 }
 
+// GroundTruthMultiCase exercises the multi-symbol invocation path of
+// show / impls / impact / trace. It drives a single command with N symbols
+// and verifies:
+//
+//   - ExpectHits: substrings that MUST appear in stdout (implementer names,
+//     callees, source lines, etc.). Coarse but robust across cosmetic output
+//     tweaks.
+//   - ForbidHits: substrings that MUST NOT appear.
+//   - ExpectAttribution: for impact/trace, every listed Name must appear
+//     alongside an `[src1,src2,...]` attribution tag containing at least the
+//     listed Sources (order-insensitive). This is what verifies that the
+//     dedupe + union behavior actually works.
+//
+// Stored at the repo level so it's not tied to a specific Symbol entry.
+type GroundTruthMultiCase struct {
+	Name              string                `yaml:"name"`
+	Op                string                `yaml:"op"` // show | impls | impact | trace
+	Symbols           []string              `yaml:"symbols"`
+	Flags             []string              `yaml:"flags"`
+	ExpectHits        []string              `yaml:"expect_hits"`
+	ForbidHits        []string              `yaml:"forbid_hits"`
+	ExpectAttribution []GroundTruthMultiHit `yaml:"expect_attribution"`
+}
+
+type GroundTruthMultiHit struct {
+	Name    string   `yaml:"name"`
+	Sources []string `yaml:"sources"`
+}
+
 // GroundTruthImplsSpec pins the exact set of local types that should be
 // returned as implementors/conformers of the symbol. Expected entries are
 // matched by implementer-name + file path. ForbidNoise names MUST NOT appear
@@ -181,6 +210,9 @@ func benchGroundTruth(cymbalBin string, repos []Repo, corpusDir string) []Ground
 	var checks []GroundTruthCheck
 	for _, repo := range repos {
 		repoDir := filepath.Join(corpusDir, repo.Name)
+		for _, mc := range repo.MultiCases {
+			checks = append(checks, runGroundTruthMulti(cymbalBin, repo.Name, repoDir, mc))
+		}
 		for _, sym := range repo.Symbols {
 			if sym.GroundTruth == nil {
 				continue
@@ -1040,4 +1072,123 @@ func relToRepo(repoDir, file string) string {
 		return normalizeGTPath(file)
 	}
 	return rel
+}
+
+// ── multi-symbol ground truth ──────────────────────────────────────
+//
+// runGroundTruthMulti drives `cymbal <op> sym1 sym2 ...` against the real
+// corpus and asserts on the rendered text output. We check:
+//
+//   - ExpectHits: every substring must appear in stdout.
+//   - ForbidHits: no substring may appear.
+//   - ExpectAttribution: each listed name must appear on a line that also
+//     contains an `[src1,src2,...]` tag containing at least the listed
+//     Sources. This verifies the dedupe + union attribution behavior.
+//
+// Text-level assertions are intentionally coarse (robust to cosmetic tweaks,
+// brittle enough to catch real regressions).
+func runGroundTruthMulti(cymbalBin, repoName, repoDir string, mc GroundTruthMultiCase) GroundTruthCheck {
+	check := GroundTruthCheck{
+		Repo:   repoName,
+		Symbol: mc.Name,
+		Op:     Op(mc.Op),
+	}
+	if len(mc.Symbols) == 0 {
+		check.Details = "multi_case requires symbols"
+		return check
+	}
+	args := []string{mc.Op}
+	args = append(args, mc.Flags...)
+	args = append(args, mc.Symbols...)
+	out, err := runGroundTruthCmd(repoDir, cymbalBin, args...)
+	if err != nil {
+		check.Details = err.Error()
+		return check
+	}
+	text := string(out)
+
+	var missing []string
+	for _, want := range mc.ExpectHits {
+		if !strings.Contains(text, want) {
+			missing = append(missing, want)
+		}
+	}
+	var leaked []string
+	for _, bad := range mc.ForbidHits {
+		if strings.Contains(text, bad) {
+			leaked = append(leaked, bad)
+		}
+	}
+	var attrMiss []string
+	for _, hit := range mc.ExpectAttribution {
+		if !lineHasAttribution(text, hit.Name, hit.Sources) {
+			attrMiss = append(attrMiss,
+				fmt.Sprintf("%s=[%s]", hit.Name, strings.Join(hit.Sources, ",")))
+		}
+	}
+
+	sort.Strings(missing)
+	sort.Strings(leaked)
+	sort.Strings(attrMiss)
+
+	var parts []string
+	if len(missing) > 0 {
+		parts = append(parts, "missing "+truncateGTList(missing))
+	}
+	if len(leaked) > 0 {
+		parts = append(parts, "forbidden "+truncateGTList(leaked))
+	}
+	if len(attrMiss) > 0 {
+		parts = append(parts, "attribution missing "+truncateGTList(attrMiss))
+	}
+	passed := len(missing) == 0 && len(leaked) == 0 && len(attrMiss) == 0
+
+	tp := len(mc.ExpectHits) - len(missing)
+	check.Passed = passed
+	check.TruePositives = tp
+	check.FalsePositives = len(leaked)
+	check.FalseNegatives = len(missing)
+	check.Expected = len(mc.ExpectHits) + len(mc.ExpectAttribution)
+	check.Actual = tp + len(mc.ExpectAttribution) - len(attrMiss)
+	if len(parts) > 0 {
+		check.Details = strings.Join(parts, "; ")
+	}
+	return check
+}
+
+// lineHasAttribution returns true if any line of text contains `name` and a
+// bracketed `[...]` tag that includes every source in `want`. Multi-symbol
+// trace output also carries a leading depth tag like `[1]`, so we scan all
+// `[...]` groups on the line and match on any one whose contents look like
+// source names (non-numeric).
+func lineHasAttribution(text, name string, want []string) bool {
+	tagRe := regexp.MustCompile(`\[([^\[\]]+)\]`)
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.Contains(line, name) {
+			continue
+		}
+		for _, m := range tagRe.FindAllStringSubmatch(line, -1) {
+			inner := m[1]
+			// Skip depth-style tags ("[1]", "[12]"). Attribution always
+			// contains non-digit characters.
+			if _, err := strconv.Atoi(strings.TrimSpace(inner)); err == nil {
+				continue
+			}
+			got := map[string]bool{}
+			for _, s := range strings.Split(inner, ",") {
+				got[strings.TrimSpace(s)] = true
+			}
+			missing := false
+			for _, w := range want {
+				if !got[w] {
+					missing = true
+					break
+				}
+			}
+			if !missing {
+				return true
+			}
+		}
+	}
+	return false
 }

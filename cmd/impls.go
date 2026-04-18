@@ -10,7 +10,7 @@ import (
 )
 
 var implsCmd = &cobra.Command{
-	Use:   "impls <symbol>",
+	Use:   "impls <symbol> [symbol2 ...]",
 	Short: "Find types that implement / conform to / extend a symbol",
 	Long: `Find local types that declare themselves as implementing, conforming to,
 or extending the given name.
@@ -21,16 +21,21 @@ interfaces, Python base classes, Ruby include/extend, PHP implements, and C++
 base classes. Results are best-effort based on AST name matching — external
 (framework) targets are returned with resolved=false.
 
+Multi-symbol: pass more than one name (or pipe via --stdin) to get the answer
+for all of them in one turn. JSON mode returns a map keyed by the requested
+name.
+
 The inverse direction is also supported: use --of to list what a specific type
-itself implements.
+itself implements. --of is always single-symbol.
 
 Examples:
-  cymbal impls Reader                   # who implements io.Reader?
-  cymbal impls LiveActivityIntent       # works for external framework protocols
-  cymbal impls Plugin --lang go         # only Go implementers
-  cymbal impls --of TimerActivityIntent # what does this type implement?
-  cymbal impls Foo --json               # structured output for agents`,
-	Args: cobra.MaximumNArgs(1),
+  cymbal impls Reader                       # who implements io.Reader?
+  cymbal impls Reader Writer Closer         # three interfaces at once
+  cymbal impls LiveActivityIntent           # works for external framework protocols
+  cymbal impls Plugin --lang go             # only Go implementers
+  cymbal impls --of TimerActivityIntent     # what does this type implement?
+  cymbal impls Foo --json                   # structured output for agents`,
+	Args: cobra.MinimumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dbPath := getDBPath(cmd)
 		ensureFresh(dbPath)
@@ -43,97 +48,155 @@ Examples:
 		resolvedOnly, _ := cmd.Flags().GetBool("resolved")
 		unresolvedOnly, _ := cmd.Flags().GetBool("unresolved")
 
-		name := inverse
-		if name == "" {
-			if len(args) == 0 {
-				return fmt.Errorf("symbol name required (or use --of <type>)")
-			}
-			name = args[0]
-		} else if len(args) > 0 {
-			return fmt.Errorf("pass either a positional symbol or --of <type>, not both")
-		}
-
-		fetchLimit := widenPathFilterLimit(limit, len(includes) > 0 || len(excludes) > 0 || langFilter != "")
-
-		var results []index.ImplementorResult
-		var err error
+		// --of is inherently singular; positional args are disallowed with it.
 		if inverse != "" {
-			results, err = index.FindImplements(dbPath, name, fetchLimit)
-		} else {
-			results, err = index.FindImplementors(dbPath, name, fetchLimit)
+			if len(args) > 0 {
+				return fmt.Errorf("pass either positional symbols or --of <type>, not both")
+			}
+			return runImplsOne(dbPath, inverse, inverse, jsonOut, limit, langFilter, includes, excludes, resolvedOnly, unresolvedOnly)
 		}
+
+		names, err := collectSymbols(cmd, args)
 		if err != nil {
 			return err
 		}
 
-		// Language filter.
-		if langFilter != "" {
-			filtered := results[:0]
-			for _, r := range results {
-				if r.Language == langFilter {
-					filtered = append(filtered, r)
-				}
-			}
-			results = filtered
-		}
-
-		// Path filter.
-		results = filterByPath(results, func(r index.ImplementorResult) string { return r.RelPath }, includes, excludes)
-
-		// Resolved/unresolved filter.
-		if resolvedOnly || unresolvedOnly {
-			filtered := results[:0]
-			for _, r := range results {
-				if resolvedOnly && !r.Resolved {
+		// JSON multi-mode: one map keyed by requested name.
+		if jsonOut && len(names) > 1 {
+			out := make(map[string]any, len(names))
+			for _, n := range names {
+				rows, ferr := fetchImpls(dbPath, n, "", limit, langFilter, includes, excludes, resolvedOnly, unresolvedOnly)
+				if ferr != nil {
+					out[n] = map[string]any{"error": ferr.Error()}
 					continue
 				}
-				if unresolvedOnly && r.Resolved {
+				out[n] = map[string]any{
+					"symbol":            n,
+					"direction":         "implementors (incoming)",
+					"implementor_count": len(rows),
+					"results":           rows,
+				}
+			}
+			return writeJSON(out)
+		}
+
+		multi := len(names) > 1
+		for i, n := range names {
+			if multi {
+				multiSymbolBanner(n, i == 0)
+				multiSymbolHeader(n)
+				// Keep "no implementors" on stdout so it stays in order with
+				// the header banners instead of interleaving with stderr.
+				rows, ferr := fetchImpls(dbPath, n, "", limit, langFilter, includes, excludes, resolvedOnly, unresolvedOnly)
+				if ferr != nil {
+					fmt.Printf("error: %v\n", ferr)
 					continue
 				}
-				filtered = append(filtered, r)
+				if len(rows) == 0 {
+					fmt.Printf("No implementors found for '%s'.\n", n)
+					continue
+				}
+				_ = renderJSONOrFrontmatter(false, rows,
+					[]kv{
+						{"symbol", n},
+						{"direction", "implementors (incoming)"},
+						{"implementor_count", fmt.Sprintf("%d", len(rows))},
+					},
+					formatImplementorResults(rows, false),
+				)
+				continue
 			}
-			results = filtered
-		}
-
-		if limit > 0 && len(results) > limit {
-			results = results[:limit]
-		}
-
-		if len(results) == 0 {
-			if inverse != "" {
-				fmt.Fprintf(os.Stderr, "No implements edges found for '%s'.\n", name)
-			} else {
-				fmt.Fprintf(os.Stderr, "No implementors found for '%s'.\n", name)
+			if err := runImplsOne(dbPath, n, "", jsonOut, limit, langFilter, includes, excludes, resolvedOnly, unresolvedOnly); err != nil {
+				fmt.Fprintf(os.Stderr, "%s: %v\n", n, err)
+				continue
 			}
-			return nil
 		}
-
-		meta := []kv{{"symbol", name}}
-		if inverse != "" {
-			meta = append(meta, kv{"direction", "implements (outgoing)"})
-			meta = append(meta, kv{"edges", fmt.Sprintf("%d", len(results))})
-		} else {
-			meta = append(meta, kv{"direction", "implementors (incoming)"})
-			meta = append(meta, kv{"implementor_count", fmt.Sprintf("%d", len(results))})
-		}
-
-		return renderJSONOrFrontmatter(
-			jsonOut,
-			results,
-			meta,
-			formatImplementorResults(results, inverse != ""),
-		)
+		return nil
 	},
 }
 
+// fetchImpls runs an implementors-or-implements query with the shared filters.
+// When inverse != "", --of <inverse> is used; otherwise `name` is the incoming
+// target.
+func fetchImpls(dbPath, name, inverse string, limit int, langFilter string, includes, excludes []string, resolvedOnly, unresolvedOnly bool) ([]index.ImplementorResult, error) {
+	fetchLimit := widenPathFilterLimit(limit, len(includes) > 0 || len(excludes) > 0 || langFilter != "")
+	var results []index.ImplementorResult
+	var err error
+	if inverse != "" {
+		results, err = index.FindImplements(dbPath, inverse, fetchLimit)
+	} else {
+		results, err = index.FindImplementors(dbPath, name, fetchLimit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if langFilter != "" {
+		filtered := results[:0]
+		for _, r := range results {
+			if r.Language == langFilter {
+				filtered = append(filtered, r)
+			}
+		}
+		results = filtered
+	}
+	results = filterByPath(results, func(r index.ImplementorResult) string { return r.RelPath }, includes, excludes)
+	if resolvedOnly || unresolvedOnly {
+		filtered := results[:0]
+		for _, r := range results {
+			if resolvedOnly && !r.Resolved {
+				continue
+			}
+			if unresolvedOnly && r.Resolved {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		results = filtered
+	}
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
+}
+
+// runImplsOne renders a single-symbol impls result (either incoming or --of).
+func runImplsOne(dbPath, name, inverse string, jsonOut bool, limit int, langFilter string, includes, excludes []string, resolvedOnly, unresolvedOnly bool) error {
+	results, err := fetchImpls(dbPath, name, inverse, limit, langFilter, includes, excludes, resolvedOnly, unresolvedOnly)
+	if err != nil {
+		return err
+	}
+	if len(results) == 0 {
+		if inverse != "" {
+			fmt.Fprintf(os.Stderr, "No implements edges found for '%s'.\n", inverse)
+		} else {
+			fmt.Fprintf(os.Stderr, "No implementors found for '%s'.\n", name)
+		}
+		return nil
+	}
+
+	var meta []kv
+	if inverse != "" {
+		meta = []kv{{"symbol", inverse}, {"direction", "implements (outgoing)"}, {"edges", fmt.Sprintf("%d", len(results))}}
+	} else {
+		meta = []kv{{"symbol", name}, {"direction", "implementors (incoming)"}, {"implementor_count", fmt.Sprintf("%d", len(results))}}
+	}
+	return renderJSONOrFrontmatter(
+		jsonOut,
+		results,
+		meta,
+		formatImplementorResults(results, inverse != ""),
+	)
+}
+
 func init() {
-	implsCmd.Flags().IntP("limit", "n", 50, "max results")
+	implsCmd.Flags().IntP("limit", "n", 50, "max results per symbol")
 	implsCmd.Flags().StringP("lang", "l", "", "filter by language (swift, go, java, ...)")
 	implsCmd.Flags().StringArray("path", nil, "include only results whose path matches this glob (repeatable)")
 	implsCmd.Flags().StringArray("exclude", nil, "exclude results whose path matches this glob (repeatable)")
-	implsCmd.Flags().String("of", "", "inverse direction: list what this type implements")
+	implsCmd.Flags().String("of", "", "inverse direction: list what this type implements (single symbol)")
 	implsCmd.Flags().Bool("resolved", false, "only show targets whose declaration is in the index")
 	implsCmd.Flags().Bool("unresolved", false, "only show external / unresolved targets")
+	addStdinFlag(implsCmd)
 	rootCmd.AddCommand(implsCmd)
 }
 

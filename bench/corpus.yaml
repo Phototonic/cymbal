@@ -181,6 +181,46 @@ repos:
           - "struct Context context.go:55"
         cymbal_max_matches: 8
         expect_smaller_output: true
+    multi_cases:
+      # Batch show with per-symbol headers.
+      - name: show_batch_symbols
+        op: show
+        symbols: [New, Default, HandlerFunc]
+        expect_hits:
+          - "═══ New ═══"
+          - "═══ Default ═══"
+          - "═══ HandlerFunc ═══"
+          - "func New("
+          - "func Default"
+      # Multi-symbol trace + dedupe + attribution. Default calls New, so
+      # New-owned callees reached from both show up tagged [Default,New].
+      - name: trace_union_default_new
+        op: trace
+        symbols: [Default, New]
+        flags: ["-d", "1", "-n", "50"]
+        expect_hits:
+          - "symbols: Default,New"
+          - "downward (callees)"
+        expect_attribution:
+          - name: debugPrintWARNINGNew
+            sources: [Default, New]
+          - name: allocateContext
+            sources: [Default, New]
+      # Multi-symbol impact: union of callers across two methods.
+      - name: impact_union_servehttp_handlecontext
+        op: impact
+        symbols: [ServeHTTP, HandleContext]
+        flags: ["-D", "1", "-n", "30"]
+        expect_hits:
+          - "symbols: ServeHTTP,HandleContext"
+      # Batch impls: not-found rows stay in order with the banner headers.
+      - name: impls_batch_unresolved
+        op: impls
+        symbols: [Reader, Writer, Closer]
+        expect_hits:
+          - "═══ Reader ═══"
+          - "═══ Writer ═══"
+          - "═══ Closer ═══"
 
   - name: kubectl
     url: https://github.com/kubernetes/kubectl
