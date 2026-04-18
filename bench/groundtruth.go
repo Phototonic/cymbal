@@ -462,9 +462,17 @@ func tunedGrepCandidates(repoDir string, sym Symbol, spec *GroundTruthSearchSpec
 	return candidates
 }
 
+// Declaration-keyword prefixes used by scoreDeclarationShape. Ordered by
+// language frequency but the scoring is binary so order is irrelevant.
+var declKeywords = []string{"func ", "def ", "class ", "type ", "interface ", "struct ", "impl "}
+var namedDeclPrefixes = []string{"func ", "class ", "type ", "interface ", "struct ", "def ", "async def "}
+
+// Path-shape heuristics used by scorePathShape.
+var noisyPathFragments = []string{"/playground/", "/example/", "/examples/", "/demo/", "/demos/", "/docs/", "/docs_src/", "/vendor/", "/node_modules/"}
+var testPathFragments = []string{"_test.go", "/test/", "/tests/", "test_", "_spec."}
+var sourcePathFragments = []string{"/src/", "/pkg/", "/crates/", "/fastapi/", "/packages/"}
+
 func tunedGrepScore(candidate grepCandidate, sym Symbol, spec *GroundTruthSearchSpec) int {
-	score := 0
-	path := strings.ToLower(candidate.Loc.File)
 	line := strings.ToLower(strings.TrimSpace(candidate.Line))
 	name := strings.ToLower(sym.Name)
 	kind := strings.ToLower(sym.Kind)
@@ -472,13 +480,25 @@ func tunedGrepScore(candidate grepCandidate, sym Symbol, spec *GroundTruthSearch
 		kind = strings.ToLower(spec.Canonical.Kind)
 	}
 
+	score := scoreDeclarationShape(line, name, kind)
+	score += scorePathPreferences(candidate.Loc.File, spec)
+	score += scorePathShape(strings.ToLower(candidate.Loc.File))
+	return score
+}
+
+// scoreDeclarationShape rewards lines that syntactically look like symbol
+// declarations. Checking for `keyword name` (e.g. `func New`) is a stronger
+// signal than the keyword alone or the name alone, so the three checks
+// compound rather than compete.
+func scoreDeclarationShape(line, name, kind string) int {
+	score := 0
 	if strings.Contains(line, name) {
 		score += 8
 	}
-	if strings.Contains(line, "func ") || strings.Contains(line, "def ") || strings.Contains(line, "class ") || strings.Contains(line, "type ") || strings.Contains(line, "interface ") || strings.Contains(line, "struct ") || strings.Contains(line, "impl ") {
+	if containsAny(line, declKeywords) {
 		score += 40
 	}
-	if strings.Contains(line, "func "+name) || strings.Contains(line, "class "+name) || strings.Contains(line, "type "+name) || strings.Contains(line, "interface "+name) || strings.Contains(line, "struct "+name) || strings.Contains(line, "def "+name) || strings.Contains(line, "async def "+name) {
+	if containsAnyWithSuffix(line, namedDeclPrefixes, name) {
 		score += 60
 	}
 	if kind != "" && strings.Contains(line, kind) {
@@ -487,35 +507,64 @@ func tunedGrepScore(candidate grepCandidate, sym Symbol, spec *GroundTruthSearch
 	if kind == "constructor" && strings.Contains(line, name+"(") {
 		score += 30
 	}
+	return score
+}
 
+// scorePathPreferences applies the per-case prefer/avoid path hints from the
+// ground-truth spec. These are large-magnitude (±90) because they encode
+// reviewer judgment about the canonical site.
+func scorePathPreferences(path string, spec *GroundTruthSearchSpec) int {
+	score := 0
 	for _, prefer := range spec.PreferPaths {
-		if strings.Contains(candidate.Loc.File, prefer) {
+		if strings.Contains(path, prefer) {
 			score += 90
 		}
 	}
 	for _, avoid := range spec.AvoidPaths {
-		if strings.Contains(candidate.Loc.File, avoid) {
+		if strings.Contains(path, avoid) {
 			score -= 90
 		}
 	}
-
-	for _, noisy := range []string{"/playground/", "/example/", "/examples/", "/demo/", "/demos/", "/docs/", "/docs_src/", "/vendor/", "/node_modules/"} {
-		if strings.Contains(path, noisy) {
-			score -= 35
-		}
-	}
-	for _, testLike := range []string{"_test.go", "/test/", "/tests/", "test_", "_spec."} {
-		if strings.Contains(path, testLike) {
-			score -= 45
-		}
-	}
-	for _, sourceLike := range []string{"/src/", "/pkg/", "/crates/", "/fastapi/", "/packages/"} {
-		if strings.Contains(path, sourceLike) {
-			score += 10
-		}
-	}
-
 	return score
+}
+
+// scorePathShape penalizes demo / docs / test paths and rewards conventional
+// source layouts. Each match in a group applies the delta independently
+// (matches compound) — a "/docs/tests/" path accumulates both penalties.
+func scorePathShape(lowerPath string) int {
+	score := 0
+	score += countMatches(lowerPath, noisyPathFragments) * -35
+	score += countMatches(lowerPath, testPathFragments) * -45
+	score += countMatches(lowerPath, sourcePathFragments) * 10
+	return score
+}
+
+func containsAny(s string, needles []string) bool {
+	for _, n := range needles {
+		if strings.Contains(s, n) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAnyWithSuffix(s string, prefixes []string, suffix string) bool {
+	for _, p := range prefixes {
+		if strings.Contains(s, p+suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func countMatches(s string, needles []string) int {
+	count := 0
+	for _, n := range needles {
+		if strings.Contains(s, n) {
+			count++
+		}
+	}
+	return count
 }
 
 func runGroundTruthSearch(cymbalBin, repoName, repoDir string, sym Symbol) GroundTruthCheck {
