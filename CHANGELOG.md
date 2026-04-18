@@ -6,16 +6,15 @@ All notable changes to cymbal are documented here.
 
 ### Fixed
 
-- **Swift references, impact, and trace now work** — Swift files were parsed for symbols but had no reference-extraction dispatch, so `refs`, `impact`, and `trace` always returned empty on Swift code. The new `extractRefSwift` emits refs for call expressions (including `x.y.z()` navigation-expression callees) and every `user_type` occurrence, which covers type annotations (`let foo: BabyTrackingService`), inheritance and protocol conformance, generic arguments (`Array<Foo>`), dictionary and array element types, parameter types, and return types.
-- **Swift declaration classification** — Swift previously fell through to the generic classifier, so structs, protocols, enums, extensions, actors, properties, and enum members were not recognized. `classifySwift` now handles `class_declaration` (keyword-disambiguated into struct / class / actor / enum / extension), `protocol_declaration`, `function_declaration` and `protocol_function_declaration` (method vs function based on enclosing body), `init_declaration`, `deinit_declaration`, `property_declaration` (field / constant / variable), `enum_entry`, and `typealias_declaration`. Function signatures are sliced from `(` through the return clause up to the body.
+- **Swift references, impact, and trace now work** — Swift files were parsed for symbols but had no reference-extraction dispatch, so `refs`, `impact`, and `trace` always returned empty on Swift code. The new `extractRefSwift` emits refs for call expressions (including `x.y.z()` navigation-expression callees) and named type usages (`FeedingStore`, `BabyTrackingService`, `Formatter`, etc.) across annotations, inheritance clauses, generics, parameters, and return types.
+- **Swift declaration classification is now accurate** — tree-sitter-swift collapses `struct`, `class`, `enum`, `extension`, and `actor` into shared declaration node families. cymbal now disambiguates these by inspecting the leading keyword, so outlines and search results correctly label Swift declarations instead of misclassifying them as generic `class` nodes.
+- **Swift `actor` declarations are recognized explicitly** — actor types now surface as `actor` symbols instead of falling back to `class`, and members nested inside actor bodies keep the correct parent symbol.
+- **`search -i` / `--ignore-case` now implies `--exact`** — case-insensitive symbol search now matches the CLI UX and changelog docs: `-i` upgrades symbol lookup to an exact case-insensitive match, while `--text -i` remains unsupported.
 
 ### Added
 
 - **`search -i` / `--ignore-case`** — case-insensitive exact match for symbol search. `-i` now implies `--exact`, and remains unsupported with `--text`. Backed by a `COLLATE NOCASE` predicate; leaves FTS5 prefix/fuzzy search (already case-insensitive) untouched. Exposed on `index.SearchQuery` as `IgnoreCase`.
-
-### Breaking (library API)
-
-- **`store.SearchSymbols` gained an `ignoreCase bool` parameter** — new signature is `SearchSymbols(query, kind, lang string, exact, ignoreCase bool, limit int)`. The existing `SearchSymbolsCI` helper is unchanged.
+- **Swift feature coverage tests** — parser and store tests now cover Swift declaration classification, actor members, Swift reference extraction, and case-insensitive exact search behavior.
 
 ## [0.10.0] - 2026-04-15
 
