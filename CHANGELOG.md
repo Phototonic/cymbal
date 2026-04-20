@@ -4,10 +4,21 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-04-20
+
 ### Added
 
 - **`cymbal version` and `--version`** (fixes [#26](https://github.com/1broseidon/cymbal/issues/26)) — print the binary version, commit, build date, and Go toolchain. Release builds embed the tag, commit, and timestamp via `-ldflags`; `go install`-style builds fall back to `debug.ReadBuildInfo()` so module version and VCS stamp still surface. JSON mode is available via `--json`.
 - **`cymbal outline --names`** (fixes [#28](https://github.com/1broseidon/cymbal/issues/28)) — emit one deduplicated symbol name per line. This flag was already documented in the `impact`/`trace`/`show` help text and earlier CHANGELOG entries for pipe-driven multi-symbol workflows (`cymbal outline big.go -s --names | cymbal show --stdin`), but the flag itself had never been wired up.
+- **Example Agent Skill for cymbal** (fixes [#23](https://github.com/1broseidon/cymbal/issues/23)) — added `examples/skills/cymbal/{SKILL.md,README.md}` as a ready-to-install skill for Claude Code and other runtimes that read the same format. The skill encodes the “use cymbal first” rule, a command decision tree, path-filter / stdin / JSON usage, and field-manual guidance (pivot rule, stop rules, anti-patterns, real constraints) so the behavior survives long-context drift better than a one-off prompt.
+
+### Fixed
+
+- **`cymbal trace --help` example shorthand** — corrected the help text to stop implying a nonexistent `--depth` shorthand. `-d` is the global DB flag; depth remains long-form only.
+
+### Changed
+
+- **PR body validation is now proportional to PR size** — trivial PRs (small diffs or docs/trivial/dependencies labels) skip the checklist gate, larger PRs require only a real `## Summary`, and unchecked checklist boxes are surfaced as warnings instead of hard failures. This removes boilerplate friction for one-line fixes while still preserving signal on larger changes.
 
 ## [0.11.2] - 2026-04-18
 
