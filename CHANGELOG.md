@@ -4,6 +4,8 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
+## [0.11.4] - 2026-04-20
+
 ### Fixed
 
 - **C# `using` extraction now uses AST fields instead of text trimming** (follow-up to [#35](https://github.com/1broseidon/cymbal/pull/35); Codex review P1). The previous implementation stripped `"using"` / `"static"` prefixes from the directive's raw text, which produced malformed paths on `global using System.Text;` (→ `"global System.Text"`) and `using Alias = System.IO.Path;` (→ `"Alias = System.IO.Path"`). The extractor now walks `using_directive` / `global_using_directive` children, detects the alias form via a trailing `=`, and returns the real `qualified_name` / `identifier` target. Tests added for both shapes, plus a negative assertion that the old malformed outputs never appear.
