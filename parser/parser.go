@@ -1479,14 +1479,41 @@ func (e *symbolExtractor) classifyCSharp(nodeType string, node *sitter.Node) (st
 }
 
 func (e *symbolExtractor) extractImportCSharp(nodeType string, node *sitter.Node) (symbols.Import, bool) {
-	if nodeType != "using_directive" {
+	if nodeType != "using_directive" && nodeType != "global_using_directive" {
 		return symbols.Import{}, false
 	}
-	// Strip leading `using ` / `using static ` and trailing `;`, normalize whitespace.
-	raw := strings.TrimSpace(node.Content(e.src))
-	raw = strings.TrimSuffix(raw, ";")
-	raw = strings.TrimSpace(strings.TrimPrefix(raw, "using"))
-	raw = strings.TrimSpace(strings.TrimPrefix(raw, "static"))
+	// using_directive children (tree-sitter-c-sharp):
+	//   [global] 'using' [static] [alias '='] qualified_name|identifier ';'
+	// The target is the last qualified_name / identifier / generic_name that is
+	// not the alias identifier (the one followed by '='). We iterate children
+	// and pick the final name node, ignoring the optional alias prefix.
+	var target *sitter.Node
+	var aliasCandidate *sitter.Node
+	for i := 0; i < int(node.ChildCount()); i++ {
+		c := node.Child(i)
+		switch c.Type() {
+		case "qualified_name", "generic_name":
+			target = c
+		case "identifier":
+			// In `using Alias = System.IO.Path;` the first identifier is
+			// followed by `=`; treat it as alias, not the target. In
+			// `using System;` the lone identifier IS the target.
+			next := node.Child(i + 1)
+			if next != nil && next.Type() == "=" {
+				aliasCandidate = c
+				continue
+			}
+			target = c
+		}
+	}
+	if target == nil {
+		// If we only saw an alias candidate, fall through; otherwise skip.
+		if aliasCandidate == nil {
+			return symbols.Import{}, false
+		}
+		target = aliasCandidate
+	}
+	raw := strings.TrimSpace(target.Content(e.src))
 	if raw == "" {
 		return symbols.Import{}, false
 	}
@@ -1576,22 +1603,78 @@ func (e *symbolExtractor) extractImportPHP(nodeType string, node *sitter.Node) (
 	if nodeType != "namespace_use_declaration" {
 		return symbols.Import{}, false
 	}
-	// Emit one import per `namespace_use_clause` child; fallback to raw text.
+	// tree-sitter-php shapes:
+	//   use Foo\Bar;                    → namespace_use_clause(Foo\Bar)
+	//   use Foo\Bar, Baz\Qux;           → two namespace_use_clause children
+	//   use Foo\Bar as Baz;             → namespace_use_clause with aliased form
+	//   use My\{A, B as C, D};          → namespace_name(My) + namespace_use_group
+	//   use function Foo\helper;        → `function` keyword + namespace_use_clause
+	//   use const Foo\MAX;              → `const` keyword + namespace_use_clause
+	//
+	// Emit one import per resolved path. For grouped imports the prefix is the
+	// namespace_name sibling; each clause in the group is joined as prefix\name.
+	e.collectPHPImports(node)
+	// Return false so the generic path doesn't double-append; we've handled
+	// appending ourselves via e.imports.
+	return symbols.Import{}, false
+}
+
+// collectPHPImports walks a namespace_use_declaration and appends one
+// symbols.Import per resolved path directly into e.imports. Called from
+// extractImportPHP.
+func (e *symbolExtractor) collectPHPImports(node *sitter.Node) {
+	// Look for a leading namespace_name prefix (only present for grouped form).
+	var groupPrefix string
 	for i := 0; i < int(node.ChildCount()); i++ {
 		c := node.Child(i)
-		if c.Type() == "namespace_use_clause" {
-			// First qualified_name / namespace_name / name child is the path.
-			for j := 0; j < int(c.ChildCount()); j++ {
-				cc := c.Child(j)
-				switch cc.Type() {
-				case "qualified_name", "namespace_name", "name":
-					return symbols.Import{RawPath: cc.Content(e.src), Language: e.lang}, true
-				}
-			}
-			return symbols.Import{RawPath: c.Content(e.src), Language: e.lang}, true
+		if c.Type() == "namespace_name" {
+			groupPrefix = strings.TrimSpace(c.Content(e.src))
+			break
+		}
+		if c.Type() == "namespace_use_clause" || c.Type() == "namespace_use_group" {
+			break
 		}
 	}
-	return symbols.Import{}, false
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		c := node.Child(i)
+		switch c.Type() {
+		case "namespace_use_clause":
+			if path := phpUseClausePath(c, e.src); path != "" {
+				e.imports = append(e.imports, symbols.Import{RawPath: path, Language: e.lang})
+			}
+		case "namespace_use_group":
+			// Each child clause within the group resolves as <groupPrefix>\<clause>.
+			for j := 0; j < int(c.ChildCount()); j++ {
+				cc := c.Child(j)
+				if cc.Type() != "namespace_use_clause" && cc.Type() != "namespace_use_group_clause" {
+					continue
+				}
+				leaf := phpUseClausePath(cc, e.src)
+				if leaf == "" {
+					continue
+				}
+				path := leaf
+				if groupPrefix != "" {
+					path = groupPrefix + "\\" + leaf
+				}
+				e.imports = append(e.imports, symbols.Import{RawPath: path, Language: e.lang})
+			}
+		}
+	}
+}
+
+// phpUseClausePath returns the resolved path from a namespace_use_clause (or
+// namespace_use_group_clause), stripping any `as Alias` suffix.
+func phpUseClausePath(n *sitter.Node, src []byte) string {
+	for i := 0; i < int(n.ChildCount()); i++ {
+		c := n.Child(i)
+		switch c.Type() {
+		case "qualified_name", "namespace_name", "name":
+			return strings.TrimSpace(c.Content(src))
+		}
+	}
+	return strings.TrimSpace(n.Content(src))
 }
 
 func (e *symbolExtractor) extractRefPHP(nodeType string, node *sitter.Node) (symbols.Ref, bool) {
@@ -1618,12 +1701,19 @@ func (e *symbolExtractor) extractRefPHP(nodeType string, node *sitter.Node) (sym
 		}
 		return symbols.Ref{Name: name, Line: line, Language: e.lang, Kind: symbols.RefKindCall}, true
 	case "object_creation_expression":
-		// Walk children for the first name/qualified_name/named_type.
+		// Walk children for the first name/qualified_name/named_type. For
+		// fully-qualified forms (`new \Fully\Qualified\Name()`) the leading
+		// '\' is a separate anonymous child followed by a qualified_name.
 		for i := 0; i < int(node.ChildCount()); i++ {
 			c := node.Child(i)
 			switch c.Type() {
 			case "name", "qualified_name", "named_type":
 				name := extractCallName(c, e.src, e.lang)
+				// extractCallName only strips `.` separators; PHP uses `\`
+				// for namespaces, so collapse the qualified path to its leaf.
+				if idx := strings.LastIndex(name, "\\"); idx >= 0 {
+					name = name[idx+1:]
+				}
 				if name == "" {
 					continue
 				}

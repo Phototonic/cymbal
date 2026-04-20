@@ -4,6 +4,12 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **C# `using` extraction now uses AST fields instead of text trimming** (follow-up to [#35](https://github.com/1broseidon/cymbal/pull/35); Codex review P1). The previous implementation stripped `"using"` / `"static"` prefixes from the directive's raw text, which produced malformed paths on `global using System.Text;` (→ `"global System.Text"`) and `using Alias = System.IO.Path;` (→ `"Alias = System.IO.Path"`). The extractor now walks `using_directive` / `global_using_directive` children, detects the alias form via a trailing `=`, and returns the real `qualified_name` / `identifier` target. Tests added for both shapes, plus a negative assertion that the old malformed outputs never appear.
+- **PHP `use` extraction now handles grouped and comma-separated imports.** Previously only the first clause of `use Foo\Bar, Baz\Qux;` was emitted, and group form `use My\{A, B as C, D};` / `use function Foo\helper;` / `use const Foo\MAX;` produced nothing at all. The extractor now appends one `Import` per resolved path (prefixing group leaves with their common namespace) and relies on `phpUseClausePath` to strip `as Alias` suffixes. Tests cover all three shapes.
+- **PHP `new \Fully\Qualified\Name()` refs now resolve to the leaf name.** `extractCallName` strips `.` separators but PHP uses `\` for namespaces, so the previous ref was emitted as `"\\Fully\\Qualified\\Name"`. It now collapses to `"Name"` so downstream commands (`refs`, `impact`) match the same symbol.
+
 ### Added
 
 - **Dedicated parser coverage for C#, PHP, Lua, and Bash** (part of [#22](https://github.com/1broseidon/cymbal/issues/22)) — these four languages were parseable by tree-sitter but still falling through to generic symbol extraction, which left them with missing kinds and empty import/reference graphs. Each now has proper `classify` / `extractImport` / `extractRef` paths:

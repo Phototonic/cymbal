@@ -2045,7 +2045,8 @@ namespace MyApp.Core
 }
 
 func TestFeatureCSharpImports(t *testing.T) {
-	src := []byte(`using System;
+	src := []byte(`global using System.Text;
+using System;
 using System.Collections.Generic;
 using static System.Math;
 using Alias = System.IO.Path;
@@ -2055,10 +2056,26 @@ using Alias = System.IO.Path;
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{"System", "System.Collections.Generic", "System.Math"} {
+	// All five directives should produce clean namespace paths, not text-
+	// trimmed strings like "global System.Text" or "Alias = System.IO.Path".
+	expected := []string{
+		"System.Text",
+		"System",
+		"System.Collections.Generic",
+		"System.Math",
+		"System.IO.Path",
+	}
+	for _, want := range expected {
 		if findImport(result.Imports, want) == nil {
 			debugParseResult(t, result)
 			t.Fatalf("expected using %q", want)
+		}
+	}
+	// Negative: the malformed text-trim output must not appear anywhere.
+	for _, bad := range []string{"global System.Text", "Alias = System.IO.Path"} {
+		if findImport(result.Imports, bad) != nil {
+			debugParseResult(t, result)
+			t.Fatalf("unexpected malformed import %q", bad)
 		}
 	}
 }
@@ -2167,6 +2184,43 @@ use Psr\Log\LoggerInterface;
 	}
 }
 
+func TestFeaturePHPImportsGroupedAndCommaSeparated(t *testing.T) {
+	src := []byte(`<?php
+namespace App;
+
+use Foo\Bar, Baz\Qux;
+use My\{A, B as C, D};
+use function Foo\helper;
+use const Foo\MAX;
+`)
+	result, err := ParseSource(src, "test.php", "php", lang.Default.TreeSitter("php"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Comma form must produce both paths.
+	for _, want := range []string{"Foo\\Bar", "Baz\\Qux"} {
+		if findImport(result.Imports, want) == nil {
+			debugParseResult(t, result)
+			t.Fatalf("expected comma-form use %q", want)
+		}
+	}
+	// Grouped form must produce prefixed paths for each leaf.
+	for _, want := range []string{"My\\A", "My\\B", "My\\D"} {
+		if findImport(result.Imports, want) == nil {
+			debugParseResult(t, result)
+			t.Fatalf("expected grouped use %q", want)
+		}
+	}
+	// `use function` / `use const` also resolve to their paths.
+	for _, want := range []string{"Foo\\helper", "Foo\\MAX"} {
+		if findImport(result.Imports, want) == nil {
+			debugParseResult(t, result)
+			t.Fatalf("expected %q from use function / use const", want)
+		}
+	}
+}
+
 func TestFeaturePHPRefs(t *testing.T) {
 	src := []byte(`<?php
 function run() {
@@ -2174,6 +2228,7 @@ function run() {
     $g->greet('world');
     Logger::info('ok');
     $x = new DefaultGreeter('p');
+    $y = new \Fully\Qualified\Name();
 }
 `)
 	result, err := ParseSource(src, "test.php", "php", lang.Default.TreeSitter("php"))
@@ -2181,7 +2236,7 @@ function run() {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{"make_greeter", "greet", "info", "DefaultGreeter"} {
+	for _, want := range []string{"make_greeter", "greet", "info", "DefaultGreeter", "Name"} {
 		if findRef(result.Refs, want) == nil {
 			debugParseResult(t, result)
 			t.Fatalf("expected ref %q", want)
