@@ -4,6 +4,8 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
+## [0.11.5] - 2026-04-20
+
 ### Fixed
 
 - **Lua function/method `start_line` now points at the `function` keyword**, not the preceding whitespace. tree-sitter-lua (smacker fork) folds leading whitespace from the previous statement into the next `function_statement` node, so `node.StartPoint().Row` was landing 1–3 lines early. The parser now anchors Lua function/method start lines to the name node, which matches what users `grep` for. Caught by running `./bench check` on the newly-added lazy.nvim corpus entry — `cymbal show headless` pointed at the correct line, but `search`'s reported line diverged from the file.
