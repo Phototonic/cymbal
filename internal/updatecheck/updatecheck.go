@@ -379,7 +379,7 @@ func detectInstallType() InstallType {
 	if psPath, err := powerShellInstallPath(); err == nil && samePath(exe, psPath) {
 		return InstallPowerShell
 	}
-	path := filepath.ToSlash(strings.ToLower(exe))
+	path := normalizePath(exe)
 	if strings.HasSuffix(path, "/go/bin/cymbal") || strings.HasSuffix(path, "/go/bin/cymbal.exe") || underGoBin(exe) {
 		return InstallGo
 	}
@@ -488,12 +488,17 @@ func looksLikeHomebrew(exe string) bool {
 		paths = append(paths, resolved)
 	}
 	for _, candidate := range paths {
-		path := filepath.ToSlash(strings.ToLower(candidate))
+		path := normalizePath(candidate)
 		if strings.Contains(path, "/cellar/cymbal/") || strings.Contains(path, "/homebrew/cellar/cymbal/") {
 			return true
 		}
 	}
 	return false
+}
+
+func normalizePath(path string) string {
+	path = filepath.ToSlash(strings.ToLower(path))
+	return strings.ReplaceAll(path, "\\", "/")
 }
 
 func sameDir(exe, dir string) bool {
