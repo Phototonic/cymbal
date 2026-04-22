@@ -12,7 +12,6 @@ import (
 
 func newTestStore(t *testing.T) (*Store, string) {
 	t.Helper()
-	t.Cleanup(CloseAll)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
 	store, err := OpenStore(dbPath)
@@ -261,6 +260,8 @@ func UniqueMarkerXYZ() {
 }
 
 func TestFeatureStoreTextSearchRespectsGlobalLimit(t *testing.T) {
+	defer CloseAll()
+
 	store, dbPath := newTestStore(t)
 	dir := t.TempDir()
 	now := time.Now()
