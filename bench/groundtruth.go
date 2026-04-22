@@ -30,8 +30,8 @@ type GroundTruthSpec struct {
 // Direction controls which graph is checked: "down" (default), "up", or "both".
 // Depth overrides default depth (default 2).
 type GroundTruthGraphSpec struct {
-	Direction   string   `yaml:"direction"`   // down | up | both (default: down)
-	Depth       int      `yaml:"depth"`       // default 2
+	Direction   string   `yaml:"direction"`    // down | up | both (default: down)
+	Depth       int      `yaml:"depth"`        // default 2
 	ExpectNodes []string `yaml:"expect_nodes"` // symbols that must appear as nodes
 	ExpectEdges []string `yaml:"expect_edges"` // "A->B" resolved edges that must be present
 	ForbidNodes []string `yaml:"forbid_nodes"` // symbols that must NOT appear

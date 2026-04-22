@@ -53,12 +53,43 @@ Examples:
 			if len(args) > 0 {
 				return fmt.Errorf("pass either positional symbols or --of <type>, not both")
 			}
+			if graphRequested(cmd) {
+				results, err := fetchImpls(dbPath, inverse, inverse, 999999, langFilter, includes, excludes, resolvedOnly, unresolvedOnly)
+				if err != nil {
+					return err
+				}
+				format := selectGraphFormatFromVerb(cmd)
+				includeUnresolved, _ := cmd.Flags().GetBool("include-unresolved")
+				graph := buildImplsGraph(inverse, true, results, includeUnresolved)
+				userLimit, _ := cmd.Flags().GetInt("graph-limit")
+				graph = applyGraphLimit(graph, userLimit, format, graphRootIDSet("sym-root\x1f"+inverse))
+				return renderGraph(format, graph)
+			}
 			return runImplsOne(dbPath, inverse, inverse, jsonOut, limit, langFilter, includes, excludes, resolvedOnly, unresolvedOnly)
 		}
 
 		names, err := collectSymbols(cmd, args)
 		if err != nil {
 			return err
+		}
+
+		if graphRequested(cmd) {
+			format := selectGraphFormatFromVerb(cmd)
+			includeUnresolved, _ := cmd.Flags().GetBool("include-unresolved")
+			var graphs []*index.GraphResult
+			var roots []string
+			for _, n := range names {
+				results, err := fetchImpls(dbPath, n, "", 999999, langFilter, includes, excludes, resolvedOnly, unresolvedOnly)
+				if err != nil {
+					return fmt.Errorf("graph %q: %w", n, err)
+				}
+				graphs = append(graphs, buildImplsGraph(n, false, results, includeUnresolved))
+				roots = append(roots, "sym-target\x1f"+n)
+			}
+			merged := mergeGraphResults(graphs...)
+			userLimit, _ := cmd.Flags().GetInt("graph-limit")
+			merged = applyGraphLimit(merged, userLimit, format, graphRootIDSet(roots...))
+			return renderGraph(format, merged)
 		}
 
 		// JSON multi-mode: one map keyed by requested name.

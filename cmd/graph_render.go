@@ -18,8 +18,8 @@ import (
 const mermaidNodeCeiling = 500
 
 // addGraphFlags wires the shared --graph family of flags onto a command
-// that produces edges (trace, impact, etc.). Direction is fixed per-verb
-// by the caller.
+// that produces edges (trace, impact, importers, impls, etc.). Direction is
+// fixed per-verb by the caller.
 func addGraphFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("graph", false, "render output as a graph (mermaid on TTY, json when piped)")
 	cmd.Flags().String("graph-format", "", "graph output format: mermaid, dot, or json (implies --graph)")
@@ -69,24 +69,21 @@ func graphDepthOrDefault(cmd *cobra.Command, graphDefault int) int {
 	return graphDefault
 }
 
-// renderAsGraph builds a graph for the given symbols + direction and renders
-// it in the format selected by the verb's flags. It merges per-symbol graphs
-// by de-duplicating nodes/edges via their stable IDs and applies the
-// top-N-by-degree limit (user-supplied via --graph-limit, or the auto mermaid
-// ceiling, whichever is tighter).
-func renderAsGraph(cmd *cobra.Command, dbPath string, symbols []string, direction index.GraphDirection, graphDefaultDepth int) error {
-	format := selectGraphFormatFromVerb(cmd)
-	if len(symbols) == 0 {
-		return renderGraph(format, &index.GraphResult{
-			Nodes:      []index.GraphNode{},
-			Edges:      []index.GraphEdge{},
-			Unresolved: []index.GraphUnresolved{},
-		})
-	}
-	depth := graphDepthOrDefault(cmd, graphDefaultDepth)
-	includeUnresolved, _ := cmd.Flags().GetBool("include-unresolved")
-	userLimit, _ := cmd.Flags().GetInt("graph-limit")
+func graphNodeID(parts ...string) string {
+	return index.GraphNodeIDFor(strings.Join(parts, "\x1f"))
+}
 
+func graphRootIDSet(rootIDs ...string) map[string]bool {
+	out := make(map[string]bool, len(rootIDs))
+	for _, id := range rootIDs {
+		if id != "" {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+func mergeGraphResults(graphs ...*index.GraphResult) *index.GraphResult {
 	merged := &index.GraphResult{
 		Nodes:      []index.GraphNode{},
 		Edges:      []index.GraphEdge{},
@@ -95,7 +92,62 @@ func renderAsGraph(cmd *cobra.Command, dbPath string, symbols []string, directio
 	seenNodes := map[string]bool{}
 	seenEdges := map[string]bool{}
 	seenUnresolved := map[string]bool{}
+	for _, g := range graphs {
+		if g == nil {
+			continue
+		}
+		if g.Truncated > 0 {
+			merged.Truncated += g.Truncated
+		}
+		for _, n := range g.Nodes {
+			if !seenNodes[n.ID] {
+				seenNodes[n.ID] = true
+				merged.Nodes = append(merged.Nodes, n)
+			}
+		}
+		for _, e := range g.Edges {
+			key := e.From + "->" + e.To + "/" + string(e.Kind)
+			if !seenEdges[key] {
+				seenEdges[key] = true
+				merged.Edges = append(merged.Edges, e)
+			}
+		}
+		for _, u := range g.Unresolved {
+			key := u.From + "|" + u.Key + "|" + u.ResolvedAs
+			if !seenUnresolved[key] {
+				seenUnresolved[key] = true
+				merged.Unresolved = append(merged.Unresolved, u)
+			}
+		}
+	}
+	return merged
+}
 
+func renderPreparedGraph(cmd *cobra.Command, graph *index.GraphResult, rootIDs map[string]bool) error {
+	format := selectGraphFormatFromVerb(cmd)
+	userLimit, _ := cmd.Flags().GetInt("graph-limit")
+	graph = applyGraphLimit(graph, userLimit, format, rootIDs)
+	return renderGraph(format, graph)
+}
+
+// renderAsGraph builds a graph for the given symbols + direction and renders
+// it in the format selected by the verb's flags. It merges per-symbol graphs
+// by de-duplicating nodes/edges via their stable IDs and applies the
+// top-N-by-degree limit (user-supplied via --graph-limit, or the auto mermaid
+// ceiling, whichever is tighter).
+func renderAsGraph(cmd *cobra.Command, dbPath string, symbols []string, direction index.GraphDirection, graphDefaultDepth int) error {
+	if len(symbols) == 0 {
+		return renderPreparedGraph(cmd, &index.GraphResult{
+			Nodes:      []index.GraphNode{},
+			Edges:      []index.GraphEdge{},
+			Unresolved: []index.GraphUnresolved{},
+		}, nil)
+	}
+	depth := graphDepthOrDefault(cmd, graphDefaultDepth)
+	includeUnresolved, _ := cmd.Flags().GetBool("include-unresolved")
+
+	graphs := make([]*index.GraphResult, 0, len(symbols))
+	rootIDs := make(map[string]bool, len(symbols))
 	for _, sym := range symbols {
 		q := index.GraphQuery{
 			Symbol:            sym,
@@ -107,37 +159,175 @@ func renderAsGraph(cmd *cobra.Command, dbPath string, symbols []string, directio
 		if err != nil {
 			return fmt.Errorf("graph %q: %w", sym, err)
 		}
-		for _, n := range g.Nodes {
-			if !seenNodes[n.ID] {
-				seenNodes[n.ID] = true
-				merged.Nodes = append(merged.Nodes, n)
-			}
+		graphs = append(graphs, g)
+		rootIDs[index.GraphNodeIDFor(sym)] = true
+	}
+	return renderPreparedGraph(cmd, mergeGraphResults(graphs...), rootIDs)
+}
+
+func buildImportersGraph(target string, results []index.ImporterResult) *index.GraphResult {
+	rootID := graphNodeID("file", target)
+	nodes := map[string]index.GraphNode{
+		rootID: {ID: rootID, Kind: index.GraphNodeKindFile, Label: target, Path: target},
+	}
+	edges := map[string]index.GraphEdge{}
+	for _, r := range results {
+		parentLabel := r.Parent
+		if parentLabel == "" {
+			parentLabel = target
 		}
-		for _, e := range g.Edges {
-			key := e.From + "->" + e.To
-			if !seenEdges[key] {
-				seenEdges[key] = true
-				merged.Edges = append(merged.Edges, e)
-			}
+		parentID := graphNodeID("file", parentLabel)
+		if _, ok := nodes[parentID]; !ok {
+			nodes[parentID] = index.GraphNode{ID: parentID, Kind: index.GraphNodeKindFile, Label: parentLabel, Path: parentLabel}
 		}
-		for _, u := range g.Unresolved {
-			key := u.From + "|" + u.Key
-			if !seenUnresolved[key] {
-				seenUnresolved[key] = true
-				merged.Unresolved = append(merged.Unresolved, u)
+		importerID := graphNodeID("file", r.RelPath)
+		nodes[importerID] = index.GraphNode{ID: importerID, Kind: index.GraphNodeKindFile, Label: r.RelPath, Path: r.RelPath}
+		key := importerID + "->" + parentID
+		edges[key] = index.GraphEdge{From: importerID, To: parentID, Kind: index.GraphEdgeKindImport, Resolved: true}
+	}
+	return &index.GraphResult{
+		Nodes:      sortGraphNodes(mapValues(nodes)),
+		Edges:      sortGraphEdges(mapEdgeValues(edges)),
+		Unresolved: []index.GraphUnresolved{},
+	}
+}
+
+func buildImplsGraph(root string, inverse bool, results []index.ImplementorResult, includeUnresolved bool) *index.GraphResult {
+	nodes := map[string]index.GraphNode{}
+	edges := map[string]index.GraphEdge{}
+	unresolved := []index.GraphUnresolved{}
+
+	addResolvedTarget := func(label string) string {
+		id := graphNodeID("sym-target", label)
+		if _, ok := nodes[id]; !ok {
+			nodes[id] = index.GraphNode{ID: id, Kind: index.GraphNodeKindSymbol, Label: label, Symbol: label}
+		}
+		return id
+	}
+	addExternalTarget := func(label string) string {
+		ext := "ext:" + label
+		id := graphNodeID("ext", ext)
+		if _, ok := nodes[id]; !ok {
+			nodes[id] = index.GraphNode{ID: id, Kind: index.GraphNodeKindExternal, Label: ext, Symbol: ext}
+		}
+		return id
+	}
+	addImplementer := func(r index.ImplementorResult) string {
+		label := r.Implementer
+		if label == "" {
+			label = "(anonymous)"
+		}
+		id := graphNodeID("impl", r.RelPath, fmt.Sprintf("%d", r.Line), label)
+		if _, ok := nodes[id]; !ok {
+			nodes[id] = index.GraphNode{ID: id, Kind: index.GraphNodeKindSymbol, Label: label, Symbol: label, Path: r.RelPath, Language: r.Language}
+		}
+		return id
+	}
+	addRootType := func(label string) string {
+		id := graphNodeID("sym-root", label)
+		if _, ok := nodes[id]; !ok {
+			nodes[id] = index.GraphNode{ID: id, Kind: index.GraphNodeKindSymbol, Label: label, Symbol: label}
+		}
+		return id
+	}
+
+	if inverse {
+		rootID := addRootType(root)
+		for _, r := range results {
+			toID := ""
+			resolved := r.Resolved
+			if resolved {
+				toID = addResolvedTarget(r.Target)
+			} else {
+				u := index.GraphUnresolved{From: rootID, Key: r.Target, Reason: index.GraphUnresolvedExternal, ResolvedAs: "ext:" + r.Target}
+				unresolved = append(unresolved, u)
+				if includeUnresolved {
+					toID = addExternalTarget(r.Target)
+				} else {
+					continue
+				}
 			}
+			key := rootID + "->" + toID
+			edges[key] = index.GraphEdge{From: rootID, To: toID, Kind: index.GraphEdgeKindImplements, Resolved: resolved}
+		}
+	} else {
+		rootID := addResolvedTarget(root)
+		for _, r := range results {
+			fromID := addImplementer(r)
+			toID := rootID
+			resolved := r.Resolved
+			if !resolved {
+				u := index.GraphUnresolved{From: fromID, Key: root, Reason: index.GraphUnresolvedExternal, ResolvedAs: "ext:" + root}
+				unresolved = append(unresolved, u)
+				if includeUnresolved {
+					toID = addExternalTarget(root)
+				} else {
+					continue
+				}
+			}
+			key := fromID + "->" + toID
+			edges[key] = index.GraphEdge{From: fromID, To: toID, Kind: index.GraphEdgeKindImplements, Resolved: resolved}
 		}
 	}
 
-	merged = applyGraphLimit(merged, userLimit, format, symbols)
-	return renderGraph(format, merged)
+	return &index.GraphResult{
+		Nodes:      sortGraphNodes(mapValues(nodes)),
+		Edges:      sortGraphEdges(mapEdgeValues(edges)),
+		Unresolved: sortGraphUnresolved(unresolved),
+	}
+}
+
+func mapValues(m map[string]index.GraphNode) []index.GraphNode {
+	out := make([]index.GraphNode, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
+}
+
+func mapEdgeValues(m map[string]index.GraphEdge) []index.GraphEdge {
+	out := make([]index.GraphEdge, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
+}
+
+func sortGraphNodes(nodes []index.GraphNode) []index.GraphNode {
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].ID < nodes[j].ID
+	})
+	return nodes
+}
+
+func sortGraphEdges(edges []index.GraphEdge) []index.GraphEdge {
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].From != edges[j].From {
+			return edges[i].From < edges[j].From
+		}
+		return edges[i].To < edges[j].To
+	})
+	return edges
+}
+
+func sortGraphUnresolved(rows []index.GraphUnresolved) []index.GraphUnresolved {
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].From != rows[j].From {
+			return rows[i].From < rows[j].From
+		}
+		if rows[i].ResolvedAs != rows[j].ResolvedAs {
+			return rows[i].ResolvedAs < rows[j].ResolvedAs
+		}
+		return rows[i].Key < rows[j].Key
+	})
+	return rows
 }
 
 // applyGraphLimit applies the tighter of the user's --graph-limit and the
 // mermaid auto-ceiling (mermaid only). Roots are always kept. Emits a
 // stderr warning when the mermaid ceiling bites (the user-set limit is
 // self-inflicted, no warning).
-func applyGraphLimit(g *index.GraphResult, userLimit int, format index.GraphFormat, rootSymbols []string) *index.GraphResult {
+func applyGraphLimit(g *index.GraphResult, userLimit int, format index.GraphFormat, rootIDs map[string]bool) *index.GraphResult {
 	effective := userLimit
 	auto := format == index.GraphFormatMermaid && len(g.Nodes) > mermaidNodeCeiling
 	if auto {
@@ -147,10 +337,6 @@ func applyGraphLimit(g *index.GraphResult, userLimit int, format index.GraphForm
 	}
 	if effective <= 0 || len(g.Nodes) <= effective {
 		return g
-	}
-	rootIDs := make(map[string]bool, len(rootSymbols))
-	for _, s := range rootSymbols {
-		rootIDs[index.GraphNodeIDFor(s)] = true
 	}
 	truncated := truncateResultByDegree(g, effective, rootIDs)
 	if auto && userLimit <= 0 {

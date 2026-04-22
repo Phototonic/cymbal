@@ -35,10 +35,13 @@ const (
 	GraphNodeKindSymbol   GraphNodeKind = "symbol"
 	GraphNodeKindExternal GraphNodeKind = "external"
 	GraphNodeKindSentinel GraphNodeKind = "sentinel"
+	GraphNodeKindFile     GraphNodeKind = "file"
 )
 
 const (
-	GraphEdgeKindCall GraphEdgeKind = "call"
+	GraphEdgeKindCall       GraphEdgeKind = "call"
+	GraphEdgeKindImport     GraphEdgeKind = "import"
+	GraphEdgeKindImplements GraphEdgeKind = "implements"
 )
 
 const (

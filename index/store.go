@@ -1189,6 +1189,10 @@ type ImporterResult struct {
 	RelPath string `json:"rel_path"`
 	Import  string `json:"import"`
 	Depth   int    `json:"depth"`
+	// Parent is the current BFS target this importer matched against.
+	// At depth=1 it is the original query target; at deeper hops it is
+	// the rel_path of the previously discovered importer.
+	Parent string `json:"parent,omitempty"`
 }
 
 // FindImporters finds files that import the file(s) containing a symbol, up to depth hops.
@@ -1248,6 +1252,7 @@ func (s *Store) FindImporters(symbolName string, depth, limit int) ([]ImporterRe
 					if !seen[r.RelPath] {
 						seen[r.RelPath] = true
 						r.Depth = d
+						r.Parent = target
 						results = append(results, r)
 						nextTargets = append(nextTargets, r.RelPath)
 					}
@@ -1376,6 +1381,7 @@ func (s *Store) FindImportersByPath(target string, depth, limit int) ([]Importer
 					if !seen[r.RelPath] {
 						seen[r.RelPath] = true
 						r.Depth = d
+						r.Parent = t
 						results = append(results, r)
 						nextTargets = append(nextTargets, r.RelPath)
 					}

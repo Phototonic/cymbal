@@ -12,6 +12,57 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func TestBuildImportersGraph(t *testing.T) {
+	results := []index.ImporterResult{
+		{File: "a.go", RelPath: "a.go", Import: "b", Depth: 1, Parent: ""},
+		{File: "b.go", RelPath: "b.go", Import: "c", Depth: 2, Parent: "a.go"},
+	}
+	graph := buildImportersGraph("b", results)
+	if len(graph.Nodes) != 3 {
+		t.Fatalf("expected 3 nodes, got %d", len(graph.Nodes))
+	}
+	if len(graph.Edges) != 2 {
+		t.Fatalf("expected 2 edges, got %d", len(graph.Edges))
+	}
+	hasAToB := false
+	for _, e := range graph.Edges {
+		if e.From == index.GraphNodeIDFor("file\x1fa.go") && e.To == index.GraphNodeIDFor("file\x1fb") {
+			hasAToB = true
+		}
+	}
+	if !hasAToB {
+		t.Fatalf("expected a->b edge, got %+v", graph.Edges)
+	}
+}
+
+func TestBuildImplsGraph(t *testing.T) {
+	results := []index.ImplementorResult{
+		{Implementer: "MyType", Target: "MyInterface", File: "a.go", Line: 10, RelPath: "a.go", Resolved: true},
+		{Implementer: "OtherType", Target: "ExtInterface", File: "b.go", Line: 20, RelPath: "b.go", Resolved: false},
+	}
+	graph := buildImplsGraph("MyInterface", false, results, true)
+	if len(graph.Nodes) != 4 { // root + 2 impls + 1 external
+		t.Fatalf("expected 4 nodes, got %d", len(graph.Nodes))
+	}
+	if len(graph.Edges) != 2 {
+		t.Fatalf("expected 2 edges, got %d", len(graph.Edges))
+	}
+	if len(graph.Unresolved) != 1 {
+		t.Fatalf("expected 1 unresolved, got %d", len(graph.Unresolved))
+	}
+
+	inverse := buildImplsGraph("MyType", true, results, true)
+	hasMyTypeToMyInterface := false
+	for _, e := range inverse.Edges {
+		if e.From == index.GraphNodeIDFor("sym-root\x1fMyType") && e.To == index.GraphNodeIDFor("sym-target\x1fMyInterface") {
+			hasMyTypeToMyInterface = true
+		}
+	}
+	if !hasMyTypeToMyInterface {
+		t.Fatalf("expected MyType->MyInterface in inverse graph, got %+v", inverse.Edges)
+	}
+}
+
 func TestRenderGraphEmptyFormats(t *testing.T) {
 	empty := &index.GraphResult{Nodes: []index.GraphNode{}, Edges: []index.GraphEdge{}, Unresolved: []index.GraphUnresolved{}}
 	if got := renderGraphMermaid(empty); got != "flowchart LR\n%% no edges\n" {
