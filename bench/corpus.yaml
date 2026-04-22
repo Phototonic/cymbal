@@ -26,6 +26,27 @@ repos:
           show:
             file: "gin.go"
             line: 188
+          graph:
+            direction: down
+            depth: 2
+            # New calls debugPrintWARNINGNew, With, allocateContext directly;
+            # debugPrintWARNINGNew in turn calls debugPrint.
+            expect_nodes:
+              - debugPrintWARNINGNew
+              - allocateContext
+              - With
+              - debugPrint
+            expect_edges:
+              - "New->debugPrintWARNINGNew"
+              - "New->allocateContext"
+              - "New->With"
+              - "debugPrintWARNINGNew->debugPrint"
+            # These symbols are callers of New, not callees — must not appear
+            # in a downward graph from New.
+            forbid_nodes:
+              - ServeHTTP
+              - Default
+              - handleHTTPRequest
       - name: IRoutes
         file_contains: "routergroup.go"
         kind: interface
@@ -107,6 +128,27 @@ repos:
                 line: 30
               - file: "utils.go"
                 line: 49
+          graph:
+            direction: down
+            depth: 2
+            # ServeHTTP calls handleHTTPRequest directly; handleHTTPRequest
+            # calls getValue, cleanPath, WriteHeaderNow, serveError, etc.
+            expect_nodes:
+              - handleHTTPRequest
+              - getValue
+              - cleanPath
+              - serveError
+              - redirectTrailingSlash
+            expect_edges:
+              - "ServeHTTP->handleHTTPRequest"
+              - "handleHTTPRequest->getValue"
+              - "handleHTTPRequest->cleanPath"
+              - "handleHTTPRequest->serveError"
+              - "handleHTTPRequest->redirectTrailingSlash"
+            # Callers of ServeHTTP must not appear in a downward graph
+            forbid_nodes:
+              - New
+              - Default
       - name: HandlerFunc
         file_contains: "gin.go"
         kind: type
