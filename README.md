@@ -192,8 +192,9 @@ Run all cymbal commands as: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1bro
 - **New to a repo?**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal structure` — entry points, hotspots, central packages. Start here.
 - **To understand a symbol**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal investigate <symbol>` — returns source, callers, impact, or members based on what the symbol is.
 - **To understand multiple symbols**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal investigate Foo Bar Baz` — batch mode, one invocation.
-- **To trace an execution path**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal trace <symbol>` — follows the call graph downward (what does X call, what do those call).
-- **To assess change risk**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal impact <symbol>` — follows the call graph upward (what breaks if X changes).
+- **To trace an execution path**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal trace <symbol>` — follows the call graph downward. Add `--graph` for a visual map.
+- **To assess change risk**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal impact <symbol>` — follows the call graph upward. Add `--graph` for a visual map.
+- **To see relationships visually**: add `--graph` to `trace`, `impact`, `importers`, or `impls`. Use `--graph-format json` when piped.
 - Before reading a file: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal outline <file>` or `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal show <file:L1-L2>`
 - Before searching: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal search <query>` (symbols) or add `--text` for grep
 - Before exploring structure: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal ls` or `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal ls --stats`

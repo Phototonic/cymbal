@@ -4,6 +4,31 @@ All notable changes to cymbal are documented here.
 
 <!-- This page is synced from CHANGELOG.md by the deploy workflow. -->
 
+## [0.12.0] - Unreleased
+
+### Added
+
+- **Graph mode styling for existing commands** (replaces PR #18 `cymbal depends`): Render visual graphs from `trace`, `impact`, `importers`, and `impls` directly, using Mermaid (TTY default), DOT, or JSON.
+  ```bash
+  cymbal trace <symbol> --graph
+  cymbal impact <symbol> --graph
+  cymbal importers <file> --graph
+  cymbal impls <symbol> --graph
+  ```
+  - **Shared Graph Flags:**
+    - `--graph` — triggers graph mode instead of standard text output.
+    - `--graph-format mermaid|dot|json` — overrides the format.
+    - `--graph-limit N` — caps output at the top-N most-connected nodes (preserving roots and adding a `_truncated` sentinel).
+    - `--include-unresolved` — visualizes external/unindexed relationships (like stdlib imports or conformance to unindexed protocols) as dashed nodes, prefixed with `ext:`.
+
+- **Tightened rendering UX:**
+  - Mermaid output automatically caps at 500 nodes to prevent UI rendering lockups, truncating by degree severity and alerting via stderr. You can use `--graph-limit` to dial this in manually.
+  - `impact --graph` defaults to a depth of `1` (rather than `impact`'s normal text default of `2`), significantly improving visual readability on hot functions. You can still explicitly pass `--depth 2` to override.
+
+### Removed
+
+- PR #18 proposed a standalone `cymbal depends` file graph based on heuristic terminal-token matching. This was rejected in favor of the current `--graph` architecture which requires exact relationship evidence before drawing edges. The intermediate `cymbal graph` standalone verb present in some `0.11.x` dev commits was deleted before release to maintain single-responsibility verbs.
+
 ## [0.9.3] - 2026-04-14
 
 ### Added

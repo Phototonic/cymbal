@@ -44,9 +44,9 @@ search  →  investigate / context  →  impact / trace / refs / impls  →  sho
 | Find direct references | `cymbal refs <symbol>` |
 | See who depends on a symbol transitively | `cymbal impact <symbol>` |
 | See what a symbol calls | `cymbal trace <symbol>` |
-| Find types that implement an interface | `cymbal impls <symbol>` |
+| Find types that implement an interface | `cymbal impls <symbol>` (add `--graph` for visual tree) |
 | See git diff for a symbol | `cymbal diff <symbol> [base]` (add `--stat`) |
-| Find files importing a file/package | `cymbal importers <file\|pkg>` |
+| Find files importing a file/package | `cymbal importers <file\|pkg>` (add `--graph` for fan-in tree) |
 | Get a map of the repo | `cymbal structure` |
 | List file tree / stats / indexed repos | `cymbal ls` / `--stats` / `--repos` |
 
@@ -120,6 +120,7 @@ cymbal refs Foo --path 'cmd/**' --exclude '**/testdata/**'
 ```
 cymbal impact handleRegister
 cymbal impact handleRegister -D 3 -C 2
+cymbal impact handleRegister --graph                 # renders a visual graph
 cymbal impact Save Load Delete                       # union, attributed via hit_symbols
 cymbal outline store.go -s --names | cymbal impact --stdin
 ```
@@ -128,6 +129,7 @@ cymbal outline store.go -s --names | cymbal impact --stdin
 ```
 cymbal trace handleRegister
 cymbal trace handleRegister --depth 5
+cymbal trace handleRegister --graph                  # renders a visual graph
 cymbal trace handleRegister --kinds call,use         # default: call only
 cymbal outline svc.go -s --names | cymbal trace --stdin
 ```

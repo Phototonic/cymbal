@@ -160,6 +160,54 @@ cymbal show handleAuth -C 5
 
 ---
 
+## `cymbal importers`
+
+Find files that import a given file or package.
+
+```sh
+cymbal importers <file|package> [flags]
+```
+
+| Flag | Description |
+|------|-------------|
+| `-D, --depth <n>` | Import chain depth (max 3, default: 1) |
+| `-n, --limit <n>` | Max results (default: 50) |
+| `--graph` | Render target's fan-in as a visual graph |
+| `--graph-format <fmt>` | `mermaid`, `dot`, or `json` (implies `--graph`) |
+| `--graph-limit <n>` | Cap the graph size by degree (0 for no cap) |
+
+```sh
+cymbal importers internal/auth
+cymbal importers internal/auth --graph
+```
+
+---
+
+## `cymbal impls`
+
+Find types that implement an interface, or elements an explicit type implements.
+
+```sh
+cymbal impls <symbol> [flags]
+```
+
+| Flag | Description |
+|------|-------------|
+| `-n, --limit <n>` | Max results (default: 50) |
+| `-of <type>` | Inverse: find interfaces that the given `<type>` implements |
+| `--unresolved` | Only show external / unresolved targets |
+| `--graph` | Render inheritance as a visual graph |
+| `--graph-format <fmt>` | `mermaid`, `dot`, or `json` (implies `--graph`) |
+| `--include-unresolved`| Graph unresolved external nodes as dashed `ext:` boxes |
+| `--graph-limit <n>` | Cap the graph size by degree (0 for no cap) |
+
+```sh
+cymbal impls io.Reader
+cymbal impls --of MyStruct --graph --include-unresolved
+```
+
+---
+
 ## `cymbal refs`
 
 Find references to a symbol across indexed files.
