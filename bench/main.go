@@ -48,8 +48,6 @@ type Repo struct {
 	MultiCases []GroundTruthMultiCase `yaml:"multi_cases"`
 }
 
-
-
 type Symbol struct {
 	Name                string           `yaml:"name"`
 	FileContains        string           `yaml:"file_contains"`
