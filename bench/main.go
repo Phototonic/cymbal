@@ -48,6 +48,8 @@ type Repo struct {
 	MultiCases []GroundTruthMultiCase `yaml:"multi_cases"`
 }
 
+
+
 type Symbol struct {
 	Name                string           `yaml:"name"`
 	FileContains        string           `yaml:"file_contains"`
@@ -90,6 +92,7 @@ const (
 	OpInvestigate Op = "investigate"
 	OpImpls       Op = "impls"
 	OpTrace       Op = "trace"
+	OpGraph       Op = "graph"
 )
 
 type Tool struct {
@@ -404,6 +407,9 @@ func defineTools(cymbalBin string) []Tool {
 				},
 				OpTrace: func(dir, sym string) *exec.Cmd {
 					return exec.Command(cymbalBin, "trace", sym)
+				},
+				OpGraph: func(dir, sym string) *exec.Cmd {
+					return exec.Command(cymbalBin, "graph", sym, "--direction", "both", "--json")
 				},
 			},
 			Cleanup: func(dir string) {
@@ -1039,7 +1045,7 @@ func runSpeedForTool(tool Tool, repo Repo, dir string) []Result {
 		out = append(out, r)
 	}
 	for _, sym := range repo.Symbols {
-		for _, op := range []Op{OpSearch, OpRefs, OpShow, OpInvestigate, OpImpls, OpTrace} {
+		for _, op := range []Op{OpSearch, OpRefs, OpShow, OpInvestigate, OpImpls, OpTrace, OpGraph} {
 			if _, ok := tool.Ops[op]; !ok {
 				continue
 			}

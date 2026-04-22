@@ -20,6 +20,21 @@ type GroundTruthSpec struct {
 	Refs   *GroundTruthRefsSpec   `yaml:"refs"`
 	Impls  *GroundTruthImplsSpec  `yaml:"impls"`
 	Trace  *GroundTruthTraceSpec  `yaml:"trace"`
+	Graph  *GroundTruthGraphSpec  `yaml:"graph"`
+}
+
+// GroundTruthGraphSpec verifies symbol-mode graph output.
+// ExpectNodes are symbol names that MUST appear in the graph nodes.
+// ExpectEdges are "from->to" pairs that MUST be present as resolved edges.
+// ForbidNodes are symbol names that MUST NOT appear (noise / wrong direction guard).
+// Direction controls which graph is checked: "down" (default), "up", or "both".
+// Depth overrides default depth (default 2).
+type GroundTruthGraphSpec struct {
+	Direction   string   `yaml:"direction"`   // down | up | both (default: down)
+	Depth       int      `yaml:"depth"`       // default 2
+	ExpectNodes []string `yaml:"expect_nodes"` // symbols that must appear as nodes
+	ExpectEdges []string `yaml:"expect_edges"` // "A->B" resolved edges that must be present
+	ForbidNodes []string `yaml:"forbid_nodes"` // symbols that must NOT appear
 }
 
 // GroundTruthMultiCase exercises the multi-symbol invocation path of
@@ -140,6 +155,7 @@ type GroundTruthSummary struct {
 	ImplsPrecision  float64 `json:"impls_precision"`
 	ImplsRecall     float64 `json:"impls_recall"`
 	TracePassRate   float64 `json:"trace_pass_rate"`
+	GraphPassRate   float64 `json:"graph_pass_rate"`
 }
 
 type CanonicalCaseResult struct {
@@ -232,6 +248,9 @@ func benchGroundTruth(cymbalBin string, repos []Repo, corpusDir string) []Ground
 			if sym.GroundTruth.Trace != nil {
 				checks = append(checks, runGroundTruthTrace(cymbalBin, repo.Name, repoDir, sym))
 			}
+			if sym.GroundTruth.Graph != nil {
+				checks = append(checks, runGroundTruthGraph(cymbalBin, repo.Name, repoDir, sym))
+			}
 		}
 	}
 	return checks
@@ -245,6 +264,7 @@ func summarizeGroundTruth(checks []GroundTruthCheck) GroundTruthSummary {
 
 	var implsTP, implsFP, implsFN int
 	var traceTotal, tracePassed int
+	var graphTotal, graphPassed int
 
 	summary.Total = len(checks)
 	for _, check := range checks {
@@ -274,6 +294,11 @@ func summarizeGroundTruth(checks []GroundTruthCheck) GroundTruthSummary {
 			if check.Passed {
 				tracePassed++
 			}
+		case OpGraph:
+			graphTotal++
+			if check.Passed {
+				graphPassed++
+			}
 		}
 	}
 
@@ -285,6 +310,7 @@ func summarizeGroundTruth(checks []GroundTruthCheck) GroundTruthSummary {
 	summary.ImplsPrecision = ratioPct(implsTP, implsTP+implsFP)
 	summary.ImplsRecall = ratioPct(implsTP, implsTP+implsFN)
 	summary.TracePassRate = ratioPct(tracePassed, traceTotal)
+	summary.GraphPassRate = ratioPct(graphPassed, graphTotal)
 	return summary
 }
 
@@ -1240,4 +1266,116 @@ func lineHasAttribution(text, name string, want []string) bool {
 		}
 	}
 	return false
+}
+
+// runGroundTruthGraph verifies symbol-mode graph output against pinned ground truth.
+// expect_nodes: label strings that MUST appear as node labels.
+// expect_edges: "A->B" pairs that MUST be present as resolved edges.
+// forbid_nodes: label strings that MUST NOT appear (noise guard).
+func runGroundTruthGraph(cymbalBin, repoName, repoDir string, sym Symbol) GroundTruthCheck {
+	spec := sym.GroundTruth.Graph
+	direction := spec.Direction
+	if direction == "" {
+		direction = "down"
+	}
+	depth := spec.Depth
+	if depth <= 0 {
+		depth = 2
+	}
+
+	args := []string{"--json", "graph", sym.Name,
+		"--direction", direction,
+		"--depth", fmt.Sprintf("%d", depth),
+	}
+	out, err := runGroundTruthCmd(repoDir, cymbalBin, args...)
+	if err != nil {
+		return GroundTruthCheck{
+			Repo: repoName, Symbol: sym.Name, Op: OpGraph,
+			Passed: false, Details: fmt.Sprintf("cmd error: %v", err),
+		}
+	}
+
+	nodes, edges, detail := parseGraphOutput(out)
+
+	var missing []string
+	for _, want := range spec.ExpectNodes {
+		if !nodes[want] {
+			missing = append(missing, want)
+		}
+	}
+	if len(missing) > 0 {
+		detail = appendDetail(detail, fmt.Sprintf("missing nodes: %v", missing))
+	}
+
+	var leaked []string
+	for _, bad := range spec.ForbidNodes {
+		if nodes[bad] {
+			leaked = append(leaked, bad)
+		}
+	}
+	if len(leaked) > 0 {
+		detail = appendDetail(detail, fmt.Sprintf("forbidden nodes present: %v", leaked))
+	}
+
+	var missingEdges []string
+	for _, want := range spec.ExpectEdges {
+		if !edges[want] {
+			missingEdges = append(missingEdges, want)
+		}
+	}
+	if len(missingEdges) > 0 {
+		detail = appendDetail(detail, fmt.Sprintf("missing edges: %v", missingEdges))
+	}
+
+	passed := len(missing) == 0 && len(leaked) == 0 && len(missingEdges) == 0
+	return GroundTruthCheck{
+		Repo:    repoName,
+		Symbol:  sym.Name,
+		Op:      OpGraph,
+		Passed:  passed,
+		Details: detail,
+		Actual:  len(nodes),
+	}
+}
+
+// parseGraphOutput extracts node labels and resolved "from->to" edge pairs
+// from cymbal graph --json output: {"results": {"nodes":[...], "edges":[...]}}
+func parseGraphOutput(data []byte) (nodes map[string]bool, edges map[string]bool, detail string) {
+	nodes = map[string]bool{}
+	edges = map[string]bool{}
+
+	var envelope struct {
+		Results struct {
+			Nodes []struct {
+				ID    string `json:"id"`
+				Label string `json:"label"`
+			} `json:"nodes"`
+			Edges []struct {
+				From     string `json:"from"`
+				To       string `json:"to"`
+				Resolved bool   `json:"resolved"`
+			} `json:"edges"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		detail = fmt.Sprintf("json parse error: %v", err)
+		return
+	}
+
+	idToLabel := map[string]string{}
+	for _, n := range envelope.Results.Nodes {
+		nodes[n.Label] = true
+		idToLabel[n.ID] = n.Label
+	}
+	for _, e := range envelope.Results.Edges {
+		if !e.Resolved {
+			continue
+		}
+		from := idToLabel[e.From]
+		to := idToLabel[e.To]
+		if from != "" && to != "" {
+			edges[from+"->"+to] = true
+		}
+	}
+	return
 }
