@@ -222,6 +222,7 @@ func TestEmitRemindClaudeCodeIncludesCachedUpdateMessage(t *testing.T) {
 	defer func() { version, commit, date = oldVersion, oldCommit, oldDate }()
 
 	cacheBase := t.TempDir()
+	t.Setenv("CYMBAL_CACHE_DIR", cacheBase)
 	t.Setenv("LOCALAPPDATA", cacheBase)
 	t.Setenv("XDG_CACHE_HOME", cacheBase)
 	updateDir := filepath.Join(cacheBase, "cymbal")
@@ -263,6 +264,7 @@ func TestEmitRemindIncludesCachedUpdateMessage(t *testing.T) {
 	defer func() { version, commit, date = oldVersion, oldCommit, oldDate }()
 
 	cacheBase := t.TempDir()
+	t.Setenv("CYMBAL_CACHE_DIR", cacheBase)
 	t.Setenv("LOCALAPPDATA", cacheBase)
 	t.Setenv("XDG_CACHE_HOME", cacheBase)
 	updateDir := filepath.Join(cacheBase, "cymbal")
@@ -302,6 +304,7 @@ func TestEmitRemindSkipsUpdateWhenNotifierDisabled(t *testing.T) {
 	defer func() { version, commit, date = oldVersion, oldCommit, oldDate }()
 
 	cacheBase := t.TempDir()
+	t.Setenv("CYMBAL_CACHE_DIR", cacheBase)
 	t.Setenv("LOCALAPPDATA", cacheBase)
 	t.Setenv("XDG_CACHE_HOME", cacheBase)
 	t.Setenv("CYMBAL_NO_UPDATE_NOTIFIER", "1")

@@ -175,4 +175,4 @@ func stubUpdateCheckEnv(t *testing.T) func() {
 		_ = os.Unsetenv("CYMBAL_NO_UPDATE_NOTIFIER")
 		_ = os.Unsetenv("CYMBAL_DOCKER_IMAGE")
 	}
-	}
+}

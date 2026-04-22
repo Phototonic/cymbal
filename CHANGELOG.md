@@ -4,6 +4,12 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
+## [0.11.8] - 2026-04-22
+
+### Fixed
+
+- **Update-notifier cache now has a cross-platform override.** `updatecheck.cymbalDir()` honors a new `CYMBAL_CACHE_DIR` environment variable before falling back to `os.UserCacheDir()` / the home directory. This unblocks reminder tests on macOS (where `os.UserCacheDir()` returns `~/Library/Caches` regardless of `XDG_CACHE_HOME`) and gives users a way to relocate the update-check cache on custom installs.
+
 ## [0.11.7] - 2026-04-22
 
 ### Added

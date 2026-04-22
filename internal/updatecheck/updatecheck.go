@@ -342,6 +342,9 @@ func installMarkerPath() (string, error) {
 }
 
 func cymbalDir() (string, error) {
+	if d := strings.TrimSpace(os.Getenv("CYMBAL_CACHE_DIR")); d != "" {
+		return filepath.Join(d, "cymbal"), nil
+	}
 	if d, err := cacheDirFn(); err == nil {
 		return filepath.Join(d, "cymbal"), nil
 	}
