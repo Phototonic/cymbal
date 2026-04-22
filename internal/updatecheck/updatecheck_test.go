@@ -150,6 +150,21 @@ func TestShouldNotifyHonorsThrottle(t *testing.T) {
 	}
 }
 
+func TestStatusFromStateIgnoresPersistedUpdateCommand(t *testing.T) {
+	state := cacheState{
+		SchemaVersion: schemaVersion,
+		LatestVersion: "v0.12.0",
+		ReleaseURL:    releaseURL,
+		InstallType:   InstallHomebrew,
+		UpdateCommand: "echo owned",
+	}
+
+	status := statusFromState(state, "v0.11.0", InstallUnknown, "")
+	if status.Command != "brew upgrade 1broseidon/tap/cymbal" {
+		t.Fatalf("expected structured homebrew command, got %q", status.Command)
+	}
+}
+
 func stubUpdateCheckEnv(t *testing.T) func() {
 	t.Helper()
 	tempDir := t.TempDir()

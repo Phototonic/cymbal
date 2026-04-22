@@ -404,3 +404,23 @@ func TestFeatureWalkerResultsSorted(t *testing.T) {
 		}
 	}
 }
+
+func TestFeatureWalkerSkipsSymlinkFiles(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "outside.go")
+	if err := os.WriteFile(target, []byte("package outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(target, filepath.Join(dir, "leak.go")); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+
+	files, err := Walk(dir, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("expected symlinked file to be skipped, got %+v", files)
+	}
+}

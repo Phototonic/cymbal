@@ -98,9 +98,10 @@ type Store struct {
 // OpenStore opens or creates the database.
 func OpenStore(dbPath string) (*Store, error) {
 	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating db directory: %w", err)
 	}
+	_ = os.Chmod(dir, 0o700)
 
 	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_busy_timeout=5000&_foreign_keys=ON")
 	if err != nil {
@@ -124,8 +125,15 @@ func OpenStore(dbPath string) (*Store, error) {
 	db.Exec("PRAGMA cache_size = -64000")
 	db.Exec("PRAGMA mmap_size = 268435456")
 	db.Exec("PRAGMA temp_store = MEMORY")
+	tightenStorePermissions(dbPath)
 
 	return &Store{db: db}, nil
+}
+
+func tightenStorePermissions(dbPath string) {
+	_ = os.Chmod(dbPath, 0o600)
+	_ = os.Chmod(dbPath+"-wal", 0o600)
+	_ = os.Chmod(dbPath+"-shm", 0o600)
 }
 
 // Close closes the database.

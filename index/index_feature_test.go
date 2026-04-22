@@ -3,7 +3,9 @@ package index
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func createTestRepo(t *testing.T) string {
@@ -345,5 +347,79 @@ func TestFeatureIndexRepoDBPathDeterministic(t *testing.T) {
 	}
 	if path1 == path3 {
 		t.Error("expected different DB paths for different repos")
+	}
+}
+
+func TestFeatureEnsureFreshDetectsOrdinaryFileEdits(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(filePath, []byte("package main\nfunc OldName() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	if _, err := Index(dir, dbPath, Options{Workers: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+	if err := os.WriteFile(filePath, []byte("package main\nfunc NewName() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if refreshed := EnsureFresh(dbPath); refreshed == 0 {
+		t.Fatal("expected EnsureFresh to reindex the edited file")
+	}
+
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	gotNew, err := store.SearchSymbols("NewName", "", "", true, false, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gotNew) != 1 {
+		t.Fatalf("expected NewName after refresh, got %d matches", len(gotNew))
+	}
+
+	gotOld, err := store.SearchSymbols("OldName", "", "", true, false, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gotOld) != 0 {
+		t.Fatalf("expected OldName to be removed after refresh, got %d matches", len(gotOld))
+	}
+}
+
+func TestFeatureListReposUsesCacheDirOverride(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("CYMBAL_CACHE_DIR", cacheDir)
+
+	repoDir := createTestRepo(t)
+	dbPath, err := RepoDBPath(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Index(repoDir, dbPath, Options{Workers: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	repos, err := ListRepos()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, repo := range repos {
+		if repo.DBPath == dbPath && strings.Contains(repo.DBPath, filepath.Join(cacheDir, "cymbal")) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected ListRepos to return %s from cache override, got %+v", dbPath, repos)
 	}
 }

@@ -3,10 +3,11 @@ package index
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io/fs"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -69,6 +70,9 @@ type RepoStatsResult struct {
 // Prefers os.UserCacheDir (%LOCALAPPDATA% on Windows, ~/.cache on Linux,
 // ~/Library/Caches on macOS), falls back to ~/.cymbal.
 func cymbalDir() (string, error) {
+	if d := strings.TrimSpace(os.Getenv("CYMBAL_CACHE_DIR")); d != "" {
+		return filepath.Join(d, "cymbal"), nil
+	}
 	if d, err := os.UserCacheDir(); err == nil {
 		return filepath.Join(d, "cymbal"), nil
 	}
@@ -348,10 +352,6 @@ func Index(root, dbPath string, opts Options) (*Stats, error) {
 		Errors:       pe + we,
 	}
 
-	// Record index timestamp so EnsureFresh can skip the full walk when
-	// no directories have been modified since this point.
-	_ = store.SetMeta("last_index_ns", fmt.Sprintf("%d", time.Now().UnixNano()))
-
 	return stats, nil
 }
 
@@ -380,31 +380,13 @@ func EnsureFresh(dbPath string) int {
 	}
 
 	repoRoot, err := store.GetMeta("repo_root")
+	store.Close()
 	if err != nil || repoRoot == "" {
-		store.Close()
 		repoRoot = autoDetectRoot()
 		if repoRoot == "" {
 			return 0
 		}
 		fmt.Fprintf(os.Stderr, "Building index for %s ...\n", repoRoot)
-		stats, err := Index(repoRoot, dbPath, Options{})
-		if err != nil {
-			return 0
-		}
-		return stats.FilesIndexed + stats.StaleRemoved
-	}
-
-	// Fast path: check if any directory under repoRoot has been modified
-	// since the last index run. If nothing changed, skip the full walk.
-	lastIndexStr, _ := store.GetMeta("last_index_ns")
-	store.Close()
-
-	if lastIndexStr != "" {
-		var lastNs int64
-		fmt.Sscanf(lastIndexStr, "%d", &lastNs)
-		if lastNs > 0 && !anyDirModifiedSince(repoRoot, lastNs) {
-			return 0
-		}
 	}
 
 	stats, err := Index(repoRoot, dbPath, Options{})
@@ -412,41 +394,6 @@ func EnsureFresh(dbPath string) int {
 		return 0
 	}
 	return stats.FilesIndexed + stats.StaleRemoved
-}
-
-// anyDirModifiedSince walks directories under root and returns true if any
-// directory's mtime is newer than the given unix-nano timestamp. This is
-// much cheaper than stating every file: on a 10k-file repo with 500 dirs,
-// it does ~500 stats instead of ~10k.
-func anyDirModifiedSince(root string, sinceNs int64) bool {
-	since := time.Unix(0, sinceNs)
-	dirty := false
-	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		base := filepath.Base(path)
-		// Skip known irrelevant directories (same set as walker).
-		switch base {
-		case ".git", "node_modules", "vendor", ".venv", "venv",
-			"__pycache__", ".tox", ".mypy_cache", "dist", "build",
-			".next", ".nuxt", "target", ".idea", ".vscode":
-			return filepath.SkipDir
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		if info.ModTime().After(since) {
-			dirty = true
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	return dirty
 }
 
 // autoDetectRoot resolves the git root from cwd for auto-indexing.
@@ -504,7 +451,7 @@ func readLines(path string, startLine, endLine int) string {
 	defer f.Close()
 
 	var b strings.Builder
-	scanner := bufio.NewScanner(f)
+	scanner := newLargeLineScanner(f)
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
@@ -528,13 +475,13 @@ type Repo struct {
 	DBPath      string `json:"db_path"`
 }
 
-// ListRepos scans ~/.cymbal/repos/*/index.db and returns info for each.
+// ListRepos scans the active cymbal cache directory for indexed repositories.
 func ListRepos() ([]Repo, error) {
-	home, err := os.UserHomeDir()
+	base, err := cymbalDir()
 	if err != nil {
 		return nil, err
 	}
-	pattern := filepath.Join(home, ".cymbal", "repos", "*", "index.db")
+	pattern := filepath.Join(base, "repos", "*", "index.db")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, err
@@ -607,54 +554,112 @@ func TextSearch(dbPath, query, lang string, limit int) ([]TextResult, error) {
 	}
 
 	queryBytes := []byte(query)
-	var mu sync.Mutex
-	var results []TextResult
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, runtime.NumCPU())
-
-	for _, f := range files {
-		if len(results) >= limit {
-			break
-		}
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(path, relPath string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			file, err := os.Open(path)
-			if err != nil {
-				return
-			}
-			defer file.Close()
-
-			scanner := bufio.NewScanner(file)
-			lineNum := 0
-			for scanner.Scan() {
-				lineNum++
-				line := scanner.Bytes()
-				if bytes.Contains(line, queryBytes) {
-					mu.Lock()
-					if len(results) < limit {
-						snippet := string(line)
-						if len(snippet) > 200 {
-							snippet = snippet[:200]
-						}
-						results = append(results, TextResult{
-							File:    path,
-							RelPath: relPath,
-							Line:    lineNum,
-							Snippet: snippet,
-						})
-					}
-					mu.Unlock()
-				}
-			}
-		}(f.Path, f.RelPath)
+	workerCount := runtime.NumCPU()
+	if workerCount < 1 {
+		workerCount = 1
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	workCh := make(chan FileInfo, workerCount*2)
+	var (
+		mu      sync.Mutex
+		results []TextResult
+		found   atomic.Int64
+		wg      sync.WaitGroup
+	)
+
+	worker := func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case f, ok := <-workCh:
+				if !ok {
+					return
+				}
+
+				file, err := os.Open(f.Path)
+				if err != nil {
+					continue
+				}
+
+				scanner := newLargeLineScanner(file)
+				lineNum := 0
+				for scanner.Scan() {
+					select {
+					case <-ctx.Done():
+						file.Close()
+						return
+					default:
+					}
+
+					lineNum++
+					line := scanner.Bytes()
+					if !bytes.Contains(line, queryBytes) {
+						continue
+					}
+
+					n := found.Add(1)
+					if n > int64(limit) {
+						cancel()
+						file.Close()
+						return
+					}
+
+					snippet := string(line)
+					if len(snippet) > 200 {
+						snippet = snippet[:200]
+					}
+
+					mu.Lock()
+					results = append(results, TextResult{
+						File:    f.Path,
+						RelPath: f.RelPath,
+						Line:    lineNum,
+						Snippet: snippet,
+					})
+					mu.Unlock()
+
+					if n == int64(limit) {
+						cancel()
+						file.Close()
+						return
+					}
+				}
+				file.Close()
+			}
+		}
+	}
+
+	for range workerCount {
+		wg.Add(1)
+		go worker()
+	}
+
+feed:
+	for _, f := range files {
+		select {
+		case <-ctx.Done():
+			break feed
+		case workCh <- f:
+		}
+	}
+	close(workCh)
 	wg.Wait()
+
+	if len(results) > limit {
+		results = results[:limit]
+	}
 	return results, nil
+}
+
+func newLargeLineScanner(r io.Reader) *bufio.Scanner {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	return scanner
 }
 
 // FindReferences finds files that reference a symbol name.

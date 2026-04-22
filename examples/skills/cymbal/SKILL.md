@@ -42,9 +42,9 @@ search  →  investigate / context  →  impact / trace / refs / impls  →  sho
 | Read source by symbol or file range | `cymbal show <symbol \| file[:L1-L2]>` |
 | List symbols in a file | `cymbal outline <file>` (`-s` signatures, `--names` for piping) |
 | Find direct references | `cymbal refs <symbol>` |
-| See who depends on a symbol transitively | `cymbal impact <symbol>` |
-| See what a symbol calls | `cymbal trace <symbol>` |
-| Find types that implement an interface | `cymbal impls <symbol>` (add `--graph` for visual tree) |
+| See who depends on a symbol transitively | `cymbal impact <symbol>` (add `--graph` for blast radius) |
+| See what a symbol calls | `cymbal trace <symbol>` (add `--graph` for topology) |
+| Find types that implement an interface | `cymbal impls <symbol>` (add `--graph` for conformance tree) |
 | See git diff for a symbol | `cymbal diff <symbol> [base]` (add `--stat`) |
 | Find files importing a file/package | `cymbal importers <file\|pkg>` (add `--graph` for fan-in tree) |
 | Get a map of the repo | `cymbal structure` |
@@ -143,6 +143,22 @@ cymbal impls Handler                  # Java/C#/Kotlin/TS implements, Go embeddi
 Externally-defined targets come back with `resolved=false`. Bench: **100% token
 savings vs ripgrep** on FastAPI's `FastAPI` and `APIRouter` interfaces.
 
+### `--graph` — visual topology
+```
+cymbal trace handleRegister --graph
+cymbal impact handleRegister --graph
+cymbal importers internal/index --graph
+cymbal impls Handler --graph
+cymbal trace handleRegister --graph-format json
+```
+Use graph mode when you need a high-level relationship map: fan-in/fan-out,
+inheritance/conformance, or a quick orientation pass you can paste into a
+viewer. Stay with the normal text/JSON output when you need exact call sites,
+source lines, or detail you will edit against. Defaults: Mermaid on a TTY,
+JSON when piped. Use `--graph-limit` to cap dense graphs. `impact --graph`
+defaults to depth 1 unless you explicitly pass `--depth`. `--include-unresolved`
+is useful when external relationships matter.
+
 ### `diff` — git diff scoped to a symbol
 ```
 cymbal diff ParseFile                 # vs HEAD
@@ -189,6 +205,7 @@ Run `cymbal structure` to surface the actual entry points and hotspots, then
 - Do not run both `investigate` and `context` on the same symbol.
 - Do not retry searches with synonyms more than twice — pivot.
 - Do not run `cymbal index` manually.
+- Do not default to `--graph` when you need precise call-site text or source lines — graph mode is for topology.
 - Do not `Read` a large file right after `search` — `outline` it first, then
   `show` the slice you need.
 - Do not paginate through `refs`/`impact` output when `--limit` or `--path`

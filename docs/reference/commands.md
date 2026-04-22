@@ -15,6 +15,22 @@ Passive update notices are suppressed automatically for `--json` output. Set `CY
 
 ---
 
+## Graph Output
+
+Add `--graph` to `trace`, `impact`, `importers`, or `impls` when you want a
+high-level relationship map rather than call-site detail.
+
+- Default format is Mermaid on a TTY and JSON when piped.
+- Use `--graph-format mermaid|dot|json` to force a specific format.
+- Use `--graph-limit <n>` to cap dense graphs by degree.
+- `impact --graph` defaults to depth `1` unless you explicitly pass `--depth`.
+- `--include-unresolved` is useful on symbol graphs when external relationships matter.
+
+Stay with the normal text or JSON output when you need exact source lines,
+call sites, or detail you will edit against.
+
+---
+
 ## `cymbal index`
 
 Index a directory for symbol discovery.
@@ -194,7 +210,7 @@ cymbal impls <symbol> [flags]
 | Flag | Description |
 |------|-------------|
 | `-n, --limit <n>` | Max results (default: 50) |
-| `-of <type>` | Inverse: find interfaces that the given `<type>` implements |
+| `--of <type>` | Inverse: find interfaces that the given `<type>` implements |
 | `--unresolved` | Only show external / unresolved targets |
 | `--graph` | Render inheritance as a visual graph |
 | `--graph-format <fmt>` | `mermaid`, `dot`, or `json` (implies `--graph`) |

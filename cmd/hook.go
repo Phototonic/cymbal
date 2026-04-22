@@ -611,12 +611,16 @@ func writeClaudeSettings(path string, s *claudeSettings) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
 	data, err := json.MarshalIndent(s.raw, "", "  ")
 	if err != nil {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(path, data, 0o644)
+	return atomicWriteJSON(path, data, mode)
 }
 
 // claudeHookKeys lists every Claude Code hook point we've *ever* installed
@@ -700,6 +704,22 @@ func removeClaudeHooks(s *claudeSettings) {
 	if len(hooks) == 0 {
 		delete(s.raw, "hooks")
 	}
+}
+
+func atomicWriteJSON(path string, data []byte, mode os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, mode); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, mode); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Chmod(path, mode)
 }
 
 // appendUniqueHookGroup appends `group` to the existing array (creating one

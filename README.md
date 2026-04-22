@@ -5,25 +5,60 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/1broseidon/cymbal)](https://goreportcard.com/report/github.com/1broseidon/cymbal)
 [![Latest Release](https://img.shields.io/github/v/release/1broseidon/cymbal)](https://github.com/1broseidon/cymbal/releases/latest)
 
-Fast, language-agnostic code indexer and symbol navigator built on [tree-sitter](https://tree-sitter.github.io/).
+cymbal is a fast, language-agnostic code navigator. It parses your codebase
+into a local SQLite index, then answers symbol lookups, cross-references,
+impact analysis, and relationship queries in milliseconds from your terminal or
+from an AI agent.
 
-cymbal parses your codebase into a local SQLite index, then gives you instant symbol search, cross-references, impact analysis, and scoped diffs — all from the command line. Designed to be called by AI agents, editor plugins, or directly from your terminal.
+Use it when you need:
+
+- A CLI for understanding an unfamiliar repo without bouncing between `grep`,
+  `find`, and ad hoc file reads
+- An agent-facing code navigation layer that replaces long chains of
+  search/show/refs calls with one focused command
+- A Go library for embedding indexed code navigation in editor tooling, bots,
+  or internal automation
+
+## Contents
+
+- [Documentation](#documentation)
+- [Install](#install)
+- [Quick Start](#quick-start)
+- [Why Cymbal](#why-cymbal)
+- [Commands at a Glance](#commands-at-a-glance)
+- [Graph Mode](#graph-mode)
+- [How It Works](#how-it-works)
+- [Benchmarks](#benchmarks)
+- [AI Agents](#ai-agents)
+- [Use as a Library](#use-as-a-library)
+- [Supported Languages](#supported-languages)
+- [License](#license)
+
+## Documentation
+
+| For | Start here |
+|---|---|
+| Operators / CLI users | [Quick Start](#quick-start) · [Commands at a Glance](#commands-at-a-glance) · [docs/reference/commands.md](docs/reference/commands.md) |
+| AI agents / integrations | [AI Agents](#ai-agents) · [docs/AGENT_HOOKS.md](docs/AGENT_HOOKS.md) · [docs/guide/agent-native.md](docs/guide/agent-native.md) |
+| Go library consumers | [Use as a Library](#use-as-a-library) · [docs/guide/library.md](docs/guide/library.md) |
+| Contributors / evaluators | [How It Works](#how-it-works) · [Benchmarks](#benchmarks) · [CHANGELOG.md](CHANGELOG.md) |
+| Full docs site | [docs/index.md](docs/index.md) · [docs/guide/getting-started.md](docs/guide/getting-started.md) |
 
 ## Install
 
-Homebrew (macOS / Linux):
+**Homebrew** (macOS / Linux):
 
 ```sh
 brew install 1broseidon/tap/cymbal
 ```
 
-Windows (PowerShell):
+**Windows** (PowerShell):
 
 ```powershell
 irm https://raw.githubusercontent.com/1broseidon/cymbal/main/install.ps1 | iex
 ```
 
-To uninstall (keeps index data by default):
+To uninstall on Windows (keeping index data by default):
 
 ```powershell
 # Remove binary and PATH entry, keep SQLite indexes
@@ -33,58 +68,47 @@ irm https://raw.githubusercontent.com/1broseidon/cymbal/main/uninstall.ps1 | iex
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/1broseidon/cymbal/main/uninstall.ps1))) -Purge
 ```
 
-> **Note:** `-Purge` removes all per-repo SQLite indexes stored under `%LOCALAPPDATA%\cymbal\repos\`. Omit it to keep your indexes intact in case you reinstall.
+> **Note:** `-Purge` removes all per-repo SQLite indexes stored under
+> `%LOCALAPPDATA%\cymbal\repos\`. Omit it to keep indexes intact for a later
+> reinstall.
 
-Go (requires CGO for tree-sitter + SQLite):
+**Go** (requires CGO for tree-sitter + SQLite):
 
 ```sh
 CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go install github.com/1broseidon/cymbal@latest
 ```
 
-Or grab a binary from [releases](https://github.com/1broseidon/cymbal/releases).
+Or download a binary from [releases](https://github.com/1broseidon/cymbal/releases).
 
 ### Docker
 
-No local Go toolchain or CGO setup needed — run cymbal from a pre-built container (linux/amd64 and arm64):
+No local Go toolchain or CGO setup required:
 
 ```sh
 docker pull ghcr.io/1broseidon/cymbal:latest
 ```
 
-Mount any repo and the SQLite index lands at `/workspace/.cymbal/index.db` inside the container by default (via `CYMBAL_DB`):
+Mount a repo and run cymbal inside the container:
 
 ```sh
 # Index a repo
-docker run --rm -v /path/to/your/repo:/workspace ghcr.io/1broseidon/cymbal index .
+docker run --rm -v /path/to/repo:/workspace ghcr.io/1broseidon/cymbal index .
 
-# Query it (index persists at /path/to/your/repo/.cymbal/index.db)
-docker run --rm -v /path/to/your/repo:/workspace ghcr.io/1broseidon/cymbal investigate handleAuth
+# Query it
+docker run --rm -v /path/to/repo:/workspace ghcr.io/1broseidon/cymbal investigate handleAuth
 
-# Override the DB location if needed
-docker run --rm -v /path/to/your/repo:/workspace -e CYMBAL_DB=/some/other/path.db ghcr.io/1broseidon/cymbal index .
+# Optional shell alias for repeated use
+alias cymbal='docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal'
 ```
 
-Pin a specific version if needed:
+By default the SQLite index lands at `/workspace/.cymbal/index.db` inside the
+mounted repo via `CYMBAL_DB`. Add `.cymbal/` to `.gitignore` if you use the
+container flow regularly.
 
-```sh
-docker pull ghcr.io/1broseidon/cymbal:v0.8.4
-```
+### Updating Cymbal
 
-Or build the image yourself:
-
-```sh
-docker build -t cymbal .
-# or with docker compose (mounts the current directory by default):
-docker compose run --rm cymbal index .
-```
-
-Add `.cymbal/` to your `.gitignore` to keep the index out of version control.
-
-### Update notifications
-
-`cymbal` caches release checks and can show a small update notice on interactive, non-JSON commands when a newer release is available. It never self-updates by default.
-
-Update commands by install type:
+`cymbal` can show a cached update notice during normal interactive use, but it
+never self-updates by default.
 
 - Homebrew: `brew upgrade 1broseidon/tap/cymbal`
 - Windows PowerShell: `irm https://raw.githubusercontent.com/1broseidon/cymbal/main/install.ps1 | iex`
@@ -94,154 +118,218 @@ Update commands by install type:
 
 Environment overrides:
 
-- `CYMBAL_NO_UPDATE_NOTIFIER=1` — disable passive update notices
-- `CYMBAL_INSTALL_METHOD=homebrew|powershell|docker|go|manual` — override install detection
-- `CYMBAL_UPDATE_COMMAND="..."` — override the suggested update command completely
+- `CYMBAL_NO_UPDATE_NOTIFIER=1` disables passive update notices
+- `CYMBAL_INSTALL_METHOD=homebrew|powershell|docker|go|manual` overrides install detection
+- `CYMBAL_UPDATE_COMMAND="..."` overrides the suggested update command
 
-## Quick start
+## Quick Start
 
-Define a shell alias once so every command looks like the native binary:
+Command at a glance:
 
 ```sh
-alias cymbal='docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal'
+cymbal investigate Foo      # one call -> source + callers + impact or members
+cymbal trace Foo --graph    # visual dependency map
+cymbal impact Foo           # upstream blast radius
 ```
 
-Then:
+Common first session:
 
 ```sh
-# Index the current project
+# Optional warm-up; queries auto-build the index on first use
 cymbal index .
 
-# Investigate any symbol — one call, right answer
-cymbal investigate handleAuth    # function → source + callers + impact
-cymbal investigate UserModel     # type → definition + members + references
-cymbal trace handleAuth          # downward call chain — what does it call?
+# Start with the adaptive command
+cymbal investigate handleAuth
+cymbal investigate UserModel
 
-# Or use specific commands when you need control
-cymbal search handleAuth         # find a symbol
-cymbal search "TODO" --text      # full-text grep
-cymbal show handleAuth           # read source
-cymbal outline internal/auth/handler.go  # file structure
-cymbal refs handleAuth           # who calls this?
-cymbal importers internal/auth   # who imports this package?
-cymbal impact handleAuth         # what breaks if I change this?
-cymbal diff handleAuth main      # git diff scoped to a function
-cymbal context handleAuth        # bundled: source + types + callers + imports
-cymbal ls                        # file tree
+# Follow dependencies and impact
+cymbal trace handleAuth
+cymbal impact handleAuth
+
+# Drop to specific commands when you need more control
+cymbal search handleAuth
+cymbal search "TODO" --text
+cymbal show handleAuth
+cymbal outline internal/auth/handler.go
+cymbal refs handleAuth
+cymbal importers internal/auth
+cymbal context handleAuth
+cymbal ls --stats
 ```
 
-The index auto-builds on first use — no manual `cymbal index .` required. Subsequent queries auto-refresh incrementally (~2ms when nothing changed).
+The index auto-builds on first use. After that, queries auto-refresh
+incrementally and only reparse changed files.
 
-## Commands
+## Why Cymbal
 
-| Command | What it does |
-|---------|-------------|
-| `investigate` | **Start here.** Kind-adaptive exploration — one call, right shape |
-| `structure` | Structural overview — entry points, hotspots, central packages |
-| `trace` | Downward call graph — what does this symbol call? |
-| `index` | Parse and index a directory |
-| `ls` | File tree, repo list, or `--stats` overview |
-| `search` | Symbol search (or `--text` for grep). Supports `--path`, `--exclude` |
-| `show` | Display a symbol's source code. `--all` for every match |
-| `outline` | List all symbols in a file |
-| `refs` | Find references / call sites. `--file` to scope by path |
-| `importers` | Reverse import lookup — who imports this? |
-| `impls` | Types that implement / conform to / extend this symbol. `--of <type>` for inverse |
-| `impact` | Transitive callers — what's affected by a change? |
-| `diff` | Git diff scoped to a symbol's line range |
-| `context` | Bundled view: source + types + callers + imports |
-| `hook` | Agent-integration hooks — `nudge`, `remind`, `install <agent>` |
-| `version` | Print version/build info and cached release status |
-
-Commands that accept symbols support **batch**: `cymbal investigate Foo Bar Baz` runs all three in one invocation.
-
-All commands support `--json` for structured output.
-
-## Agent integration
-
-cymbal is designed as the code navigation layer for AI agents. One command handles most investigations — specific commands exist as escape hatches when you need more control.
-
-Add this to your agent's system prompt (e.g., `CLAUDE.md`, `AGENTS.md`, or MCP tool descriptions).
-
-**Native install:**
-
-```markdown
-## Code Exploration Policy
-Use `cymbal` CLI for code navigation — prefer it over Read, Grep, Glob, or Bash for code exploration.
-- **New to a repo?**: `cymbal structure` — entry points, hotspots, central packages. Start here.
-- **To understand a symbol**: `cymbal investigate <symbol>` — returns source, callers, impact, or members based on what the symbol is.
-- **To understand multiple symbols**: `cymbal investigate Foo Bar Baz` — batch mode, one invocation.
-- **To trace an execution path**: `cymbal trace <symbol>` — follows the call graph downward (what does X call, what do those call).
-- **To assess change risk**: `cymbal impact <symbol>` — follows the call graph upward (what breaks if X changes).
-- Before reading a file: `cymbal outline <file>` or `cymbal show <file:L1-L2>`
-- Before searching: `cymbal search <query>` (symbols) or `cymbal search <query> --text` (grep, delegates to rg when available)
-- To filter results: `cymbal search --path 'src/*' --exclude '*_test.go' <query>`
-- To see all definitions: `cymbal show --all <symbol>` or `cymbal refs --file context.go <symbol>`
-- Before exploring structure: `cymbal ls` (tree) or `cymbal ls --stats` (overview)
-- To disambiguate: `cymbal show path/to/file.go:SymbolName` or `cymbal investigate file.go:Symbol`
-- The index auto-builds on first use — no manual indexing step needed. Queries auto-refresh incrementally.
-- All commands support `--json` for structured output.
-```
-
-**Docker (no local install required):**
-
-```markdown
-## Code Exploration Policy
-Use `cymbal` via Docker for code navigation — prefer it over Read, Grep, Glob, or Bash for code exploration.
-Run all cymbal commands as: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal <command>`
-- **New to a repo?**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal structure` — entry points, hotspots, central packages. Start here.
-- **To understand a symbol**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal investigate <symbol>` — returns source, callers, impact, or members based on what the symbol is.
-- **To understand multiple symbols**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal investigate Foo Bar Baz` — batch mode, one invocation.
-- **To trace an execution path**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal trace <symbol>` — follows the call graph downward. Add `--graph` for a visual map.
-- **To assess change risk**: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal impact <symbol>` — follows the call graph upward. Add `--graph` for a visual map.
-- **To see relationships visually**: add `--graph` to `trace`, `impact`, `importers`, or `impls`. Use `--graph-format json` when piped.
-- Before reading a file: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal outline <file>` or `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal show <file:L1-L2>`
-- Before searching: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal search <query>` (symbols) or add `--text` for grep
-- Before exploring structure: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal ls` or `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal ls --stats`
-- To disambiguate: `docker run --rm -v "$(pwd)":/workspace ghcr.io/1broseidon/cymbal investigate path/to/file.go:Symbol`
-- The index auto-builds on first use — no manual indexing step needed. Queries auto-refresh incrementally.
-- The SQLite index is stored at `.cymbal/index.db` inside the mounted repo (via `CYMBAL_DB`).
-- All commands support `--json` for structured output.
-```
-
-### Agent hooks
-
-Prompting works, but agents drift back to `grep`/`find` as context grows (see [issue #23](https://github.com/1broseidon/cymbal/issues/23)). Cymbal ships two small, agent-agnostic hook commands:
-
-| Command | What it does |
-|---|---|
-| `cymbal hook nudge` | Inspect a would-be shell command and, if it looks like a code search, emit a short system-message suggesting the cymbal equivalent. Never blocks. |
-| `cymbal hook remind` | Print a tone-calibrated reminder block agents can inject at session start or on demand. |
-
-**Claude Code — one-liner install:**
-
-```bash
-cymbal hook install claude-code                   # ~/.claude/settings.json
-cymbal hook install claude-code --scope project   # .claude/settings.json
-cymbal hook uninstall claude-code                 # clean removal
-```
-
-The installer is idempotent, preserves unrelated settings, and marks its own entries so `uninstall` is surgical.
-
-When `hook remind` already knows about a newer cymbal release from the cached update check, it also includes the exact update command. Agents that can run shell commands should run that command immediately; otherwise they should tell the user exactly what to run.
-
-**Other agents** (Cursor, Windsurf, aider, Cline, Continue, Zed, Codex/OpenAI Agents SDK, or anything that can shell out on a pre-tool event) — see [`docs/AGENT_HOOKS.md`](docs/AGENT_HOOKS.md) for copy-paste snippets. The same two subcommands work everywhere; `nudge` offers `--format=claude-code|json|text` and `remind` offers the same three formats, so every integration is one or two lines.
-
-### Why this works
-
-An agent tracing an auth flow typically makes 15-20 sequential tool calls: show function → read the code → guess the next function → show that → repeat. Each call costs a reasoning step (~500 tokens). Three commands eliminate this:
+For both humans and agents, three commands cover most investigations:
 
 | Command | Question it answers | Direction |
 |---|---|---|
-| `investigate X` | "Tell me about X" | Adaptive (source + callers + impact or members) |
-| `trace X` | "What does X depend on?" | Downward (callees, depth 3) |
-| `impact X` | "What depends on X?" | Upward (callers, depth 2) |
+| `investigate X` | "Tell me about X" | Adaptive: source + callers + impact or members |
+| `trace X` | "What does X depend on?" | Downward: callees |
+| `impact X` | "What depends on X?" | Upward: callers |
 
-`investigate` replaces search → show → refs. `trace` replaces 10+ sequential show calls to follow a call chain. Together they reduce a 22-call investigation to 4 calls.
+This matters because a normal code-reading loop often turns into
+search -> show -> refs -> show-next-function -> repeat. Cymbal collapses that
+into fewer, more relevant tool calls with structured output.
 
-## Supported languages
+## Commands at a Glance
 
-cymbal currently parses and indexes these languages with tree-sitter:
+| Command | What it does |
+|---|---|
+| `investigate` | **Start here.** Kind-adaptive exploration in one call |
+| `structure` | Structural overview: entry points, hotspots, central packages |
+| `trace` | Downward call graph. Add `--graph` for a visual dependency map |
+| `impact` | Upward caller graph. Add `--graph` for a visual blast-radius map |
+| `importers` | Reverse import lookup. Add `--graph` for a visual fan-in map |
+| `impls` | Find implementers / conformers / extensions. Add `--graph` for a conformance map |
+| `search` | Symbol search, or `--text` for grep-style lookup |
+| `show` | Display a symbol's source code, or a specific file range |
+| `outline` | List symbols in a file |
+| `refs` | Find references / call sites. Use `--file` to scope by path |
+| `context` | Bundled view: source + types + callers + imports |
+| `ls` | File tree, repo list, or `--stats` overview |
+| `diff` | Git diff scoped to a symbol's line range |
+| `hook` | Agent-integration helpers: `nudge`, `remind`, `install <agent>` |
+| `version` | Build info and cached release status |
+
+Commands that accept symbols support batch mode:
+
+```sh
+cymbal investigate Foo Bar Baz
+```
+
+All commands support `--json` for structured output. For full flags and
+examples, see [docs/reference/commands.md](docs/reference/commands.md).
+
+## Graph Mode
+
+Add `--graph` to `trace`, `impact`, `importers`, or `impls` when you want a
+high-level relationship map rather than call-site detail.
+
+```sh
+cymbal trace handleAuth --graph
+cymbal impact handleAuth --graph
+cymbal importers internal/auth --graph
+cymbal impls io.Reader --graph
+```
+
+- Use graph mode for orientation, fan-in/fan-out, blast radius, and
+  inheritance / conformance maps.
+- Stay with the normal text or JSON output when you need exact call sites,
+  source snippets, or line-by-line detail for an edit.
+- Mermaid is the default on a TTY. JSON is the default when piped.
+- Use `--graph-format mermaid|dot|json` to force a format.
+- Use `--graph-limit <n>` to cap dense graphs by degree.
+- `impact --graph` defaults to depth `1` unless you explicitly pass `--depth`.
+- On symbol graphs, `--include-unresolved` surfaces external relationships as
+  dashed `ext:` nodes.
+
+## How It Works
+
+1. **Index** — tree-sitter parses each file into an AST. Cymbal extracts
+   symbols, imports, and references into SQLite with FTS5-backed symbol search.
+2. **Query** — commands read from the current repo's local index instead of
+   reparsing the world every time.
+3. **Stay fresh** — before each query, cymbal checks for changed files and
+   incrementally reparses only what changed. No daemon or watch process is
+   required.
+
+Each repo gets its own database under the OS cache directory:
+
+- Linux: `~/.cache/cymbal/repos/<hash>/index.db`
+- macOS: `~/Library/Caches/cymbal/repos/<hash>/index.db`
+- Windows: `%LOCALAPPDATA%\cymbal\repos\<hash>\index.db`
+
+Override with `--db <path>` or `CYMBAL_DB` when needed.
+
+## Benchmarks
+
+The benchmark harness lives in `bench/` and runs against a pinned corpus of
+real repos across Go, Python, TypeScript, Rust, Java, C, C#, PHP, Lua, and
+Bash.
+
+```sh
+go run ./bench setup   # clone pinned corpus repos
+go run ./bench run     # run full benchmarks -> bench/RESULTS.md
+go run ./bench check   # compare current build against baseline
+```
+
+Recent corpus results:
+
+- **Accuracy:** 113/113 top-level checks passed
+- **Ground truth:** 79/79 passed, with 100% search precision/recall and 100%
+  `show` exactness
+- **Canonical ranking:** 18/18 correct at rank 1
+- **Grep footguns:** 11/11 passed
+- **Latency:** most symbol and text query commands on the benchmark corpus
+  complete in roughly 10-40ms; hot incremental refresh stays in the low tens
+  of milliseconds
+- **Agent workflow savings:** focused investigations typically use 40-100% fewer
+  tokens than comparable grep-driven flows
+
+## AI Agents
+
+Cymbal is designed to be an agent's code navigation layer, but the README only
+summarizes the integration story. The full install snippets and hook wiring
+live in the dedicated docs:
+
+- [docs/AGENT_HOOKS.md](docs/AGENT_HOOKS.md) — Claude Code install, `nudge`,
+  `remind`, and snippets for other agent runtimes
+- [docs/guide/agent-native.md](docs/guide/agent-native.md) — frontmatter output
+  format and why it is cheaper than JSON by default
+
+If you are writing agent instructions, the short policy is:
+
+- Start with `cymbal investigate <symbol>`
+- Use `cymbal trace <symbol>` for downward dependency flow
+- Use `cymbal impact <symbol>` for change risk
+- Use `cymbal show <file:L1-L2>` or `cymbal outline <file>` before broad file reads
+- Use `cymbal search <query>` before raw grep
+- Add `--graph` when the agent needs topology, not call-site text
+
+Claude Code has a one-line installer:
+
+```sh
+cymbal hook install claude-code
+```
+
+## Use as a Library
+
+```sh
+CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go get github.com/1broseidon/cymbal@latest
+```
+
+Exported packages:
+
+| Package | What it does |
+|---|---|
+| `index` | Indexing engine, SQLite store, and public query APIs |
+| `lang` | Language registry for names, extensions, special filenames, and parser availability |
+| `parser` | Tree-sitter parsing |
+| `symbols` | Core data types (`Symbol`, `Import`, `Ref`) |
+| `walker` | Concurrent file discovery with language detection |
+
+Small example:
+
+```go
+import "github.com/1broseidon/cymbal/index"
+
+stats, _ := index.Index("/path/to/repo", "", index.Options{})
+dbPath, _ := index.RepoDBPath("/path/to/repo")
+results, _ := index.SearchSymbols(dbPath, index.SearchQuery{Text: "handleAuth"})
+
+_ = stats
+_ = results
+```
+
+For streaming patterns, lower-level store access, and more complete examples,
+see [docs/guide/library.md](docs/guide/library.md).
+
+## Supported Languages
+
+Cymbal currently parses and indexes:
 
 - Go
 - Python (`.py`, `.pyw`)
@@ -265,88 +353,13 @@ cymbal currently parses and indexes these languages with tree-sitter:
 - Protobuf
 - Dart
 
-cymbal also recognizes additional file types for classification and CLI path heuristics, even when they are not parseable/indexable: `Dockerfile`, `Makefile`, `Jenkinsfile`, `CMakeLists.txt`, JSON, TOML, Markdown, SQL, Vue, Svelte, Zig, Erlang, Haskell, OCaml, R, and Perl.
+Cymbal also recognizes additional file types for classification and CLI path
+heuristics even when they are not parseable/indexable, including
+`Dockerfile`, `Makefile`, `Jenkinsfile`, `CMakeLists.txt`, JSON, TOML,
+Markdown, SQL, Vue, Svelte, Zig, Erlang, Haskell, OCaml, R, and Perl.
 
-Adding a language requires a tree-sitter grammar and a symbol extraction query.
-
-## How it works
-
-1. **Index** — tree-sitter parses each file into an AST. cymbal extracts symbols (functions, types, variables, imports) and references (calls, type usage) and stores them in SQLite with FTS5 full-text search. Each repo gets its own database under the OS cache directory (`~/.cache/cymbal/repos/<hash>/index.db` on Linux, `~/Library/Caches/cymbal/repos/` on macOS, `%LOCALAPPDATA%\cymbal\repos\` on Windows). Override with `--db <path>` or the `CYMBAL_DB` environment variable. The index auto-builds on first query — no manual `cymbal index .` required.
-
-2. **Query** — all commands read from the current repo's SQLite index. Symbol lookups, cross-references, and import graphs are SQL queries. No re-parsing needed. No cross-repo bleed.
-
-3. **Always fresh** — every query automatically checks for changed files and reindexes them before returning results. No manual reindexing, no watch daemons, no hooks. Edit a file, run a query, get the right answer. The mtime+size fast path adds ~10-24ms when nothing changed; only dirty files are re-parsed.
-
-## Benchmarks
-
-Measured against ripgrep on three real-world repos (gin, kubectl, fastapi) across Go and Python. Full harness in `bench/`.
-
-```sh
-go run ./bench setup   # clone pinned corpus repos
-go run ./bench run     # run all benchmarks → bench/RESULTS.md
-```
-
-**Speed** — cymbal queries complete in 9-27ms. Reindex with nothing changed: 8-20ms.
-
-**Accuracy** — 100% ground-truth precision/recall across 43 checks. 100% canonical @1 ranking across 9 hard disambiguation cases. 7/7 grep-footgun avoidance tests pass.
-
-**Token efficiency** — for targeted lookups, cymbal uses 17-100% fewer tokens than ripgrep (`FastAPI`: 11k grep hits → 8 cymbal results; `Context`: 915 → 5). Refs queries show the biggest wins because cymbal returns semantic call sites, not every line mentioning the string.
-
-**JIT freshness** — queries auto-detect and reparse changed files. Overhead: ~10-23ms when nothing changed, ~22-27ms after touching 1 file, ~33-43ms after touching 5 files. Deleted files are automatically pruned.
-
-**Agent workflow** — `cymbal investigate` replaces 3 separate ripgrep calls (search + show + refs) with 1 call. Typical savings: 41-100% fewer tokens for focused symbols.
-
-## Use as a library
-
-```sh
-CGO_CFLAGS="-DSQLITE_ENABLE_FTS5" go get github.com/1broseidon/cymbal@latest
-```
-
-Five packages are exported:
-
-| Package | What it does |
-|---------|-------------|
-| `index` | Indexing engine, SQLite store, and all query APIs |
-| `lang` | Unified language registry for names, extensions, special filenames, and parser availability |
-| `parser` | Tree-sitter parsing for 22 languages |
-| `symbols` | Core data types (Symbol, Import, Ref) |
-| `walker` | Concurrent file discovery with language detection |
-
-```go
-import (
-    "fmt"
-    "github.com/1broseidon/cymbal/index"
-)
-
-// Index a repo
-stats, _ := index.Index("/path/to/repo", "", index.Options{})
-fmt.Printf("%d files, %d symbols\n", stats.FilesIndexed, stats.SymbolsFound)
-
-// Query — all functions take a dbPath and return typed results
-dbPath, _ := index.RepoDBPath("/path/to/repo")
-
-results, _ := index.SearchSymbols(dbPath, index.SearchQuery{Text: "handleAuth"})
-inv, _ := index.Investigate(dbPath, "handleAuth")
-trace, _ := index.FindTrace(dbPath, "handleAuth", 3, 50)
-impact, _ := index.FindImpact(dbPath, "handleAuth", 2, 100)
-refs, _ := index.FindReferences(dbPath, "handleAuth", 50)
-```
-
-```go
-import "github.com/1broseidon/cymbal/lang"
-
-fmt.Println(lang.Default.Supported("typescript"))     // true
-fmt.Println(lang.Default.Known("dockerfile"))        // true
-fmt.Println(lang.Default.LangForFile("Dockerfile"))  // "dockerfile"
-fmt.Println(lang.Default.LangForFile("notes.toml"))  // "toml"
-```
-
-For the full API reference, streaming patterns, and lower-level store access, see the [library guide](./docs/guide/library.md).
-
-## Docs
-
-- [Library guide](./docs/guide/library.md)
-- [Changelog](./CHANGELOG.md)
+Adding a language requires a tree-sitter grammar plus symbol / import / ref
+extraction support.
 
 ## License
 

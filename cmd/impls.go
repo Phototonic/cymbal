@@ -228,6 +228,7 @@ func init() {
 	implsCmd.Flags().Bool("resolved", false, "only show targets whose declaration is in the index")
 	implsCmd.Flags().Bool("unresolved", false, "only show external / unresolved targets")
 	addStdinFlag(implsCmd)
+	addGraphFlags(implsCmd)
 	rootCmd.AddCommand(implsCmd)
 }
 

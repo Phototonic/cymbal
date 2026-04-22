@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -61,7 +62,7 @@ Examples:
 			}
 			var err error
 			if isFilePath(target) {
-				err = showFile(target, ctx, jsonOut)
+				err = showFile(dbPath, target, ctx, jsonOut)
 			} else {
 				err = showSymbol(dbPath, target, ctx, jsonOut, showAll, includes, excludes)
 			}
@@ -94,7 +95,7 @@ func showMultiJSON(dbPath string, targets []string, ctx int, showAll bool, inclu
 	out := make(map[string]any, len(targets))
 	for _, target := range targets {
 		if isFilePath(target) {
-			payload, err := buildShowFilePayload(target, ctx)
+			payload, err := buildShowFilePayload(dbPath, target, ctx)
 			if err != nil {
 				out[target] = map[string]any{"error": err.Error()}
 				continue
@@ -114,9 +115,9 @@ func showMultiJSON(dbPath string, targets []string, ctx int, showAll bool, inclu
 
 // buildShowFilePayload returns the same data showFile would print, minus the
 // side-effectful stdout write. Used by multi-symbol JSON mode.
-func buildShowFilePayload(target string, ctx int) (any, error) {
+func buildShowFilePayload(dbPath, target string, ctx int) (any, error) {
 	path, startLine, endLine := parseFileTarget(target)
-	absPath, err := filepath.Abs(path)
+	absPath, err := repoBoundFilePath(dbPath, path)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +132,7 @@ func buildShowFilePayload(target string, ctx int) (any, error) {
 		endLine = endLine + ctx
 	}
 	var lines []lineEntry
-	scanner := bufio.NewScanner(f)
+	scanner := newShowScanner(f)
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
@@ -242,10 +243,10 @@ type lineEntry struct {
 	Content string `json:"content"`
 }
 
-func showFile(target string, ctx int, jsonOut bool) error {
+func showFile(dbPath, target string, ctx int, jsonOut bool) error {
 	path, startLine, endLine := parseFileTarget(target)
 
-	absPath, err := filepath.Abs(path)
+	absPath, err := repoBoundFilePath(dbPath, path)
 	if err != nil {
 		return err
 	}
@@ -262,7 +263,7 @@ func showFile(target string, ctx int, jsonOut bool) error {
 	}
 
 	var lines []lineEntry
-	scanner := bufio.NewScanner(f)
+	scanner := newShowScanner(f)
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
@@ -333,7 +334,7 @@ func readSymbolLines(sym index.SymbolResult, ctx int) ([]lineEntry, string, int,
 
 	var lines []lineEntry
 	var content strings.Builder
-	scanner := bufio.NewScanner(f)
+	scanner := newShowScanner(f)
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
@@ -439,4 +440,61 @@ func showSymbol(dbPath, name string, ctx int, jsonOut, showAll bool, includes, e
 		}
 	}
 	return nil
+}
+
+func repoBoundFilePath(dbPath, path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+
+	repoRoot := index.RepoRootFromDB(dbPath)
+	if repoRoot == "" {
+		repoRoot = repoRootForPath(absPath)
+	}
+	if repoRoot == "" {
+		return "", fmt.Errorf("cannot determine repository root for %s", path)
+	}
+
+	resolvedRoot, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolving repository root: %w", err)
+	}
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("file not found: %s", path)
+		}
+		return "", err
+	}
+
+	rel, err := filepath.Rel(resolvedRoot, resolvedPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("refusing to read file outside repository: %s", path)
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == ".git" || strings.HasPrefix(rel, ".git/") {
+		return "", fmt.Errorf("refusing to read file inside .git: %s", path)
+	}
+
+	return resolvedPath, nil
+}
+
+func repoRootForPath(path string) string {
+	dir := filepath.Dir(path)
+	if root, err := index.FindGitRoot(dir); err == nil {
+		return root
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		if root, err := index.FindGitRoot(cwd); err == nil {
+			return root
+		}
+	}
+	return ""
+}
+
+func newShowScanner(r io.Reader) *bufio.Scanner {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	return scanner
 }

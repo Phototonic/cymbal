@@ -47,6 +47,10 @@ func init() {
 }
 
 func runDiff(dbPath, name, base string, stat, jsonOut bool) error {
+	if strings.HasPrefix(base, "-") {
+		return fmt.Errorf("invalid diff base %q", base)
+	}
+
 	results, err := index.SymbolsByName(dbPath, name)
 	if err != nil {
 		return err
@@ -91,7 +95,7 @@ func runDiff(dbPath, name, base string, stat, jsonOut bool) error {
 	}
 
 	// Run git diff.
-	out, err := exec.Command("git", "-C", repoRoot, "diff", base, "--", relPath).Output()
+	out, err := exec.Command("git", "-C", repoRoot, "diff", "--no-ext-diff", base, "--", relPath).Output()
 	if err != nil {
 		// git diff exits 1 when there are differences; check for real errors.
 		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
@@ -137,7 +141,7 @@ func runDiff(dbPath, name, base string, stat, jsonOut bool) error {
 }
 
 func runDiffStat(repoRoot, relPath, base string, sym index.SymbolResult, jsonOut bool) error {
-	out, err := exec.Command("git", "-C", repoRoot, "diff", "--stat", base, "--", relPath).Output()
+	out, err := exec.Command("git", "-C", repoRoot, "diff", "--no-ext-diff", "--stat", base, "--", relPath).Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
 			return fmt.Errorf("git diff --stat: %s", strings.TrimSpace(string(exitErr.Stderr)))

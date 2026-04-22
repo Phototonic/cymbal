@@ -4,11 +4,11 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
-## [0.12.0] - Unreleased
+## [0.12.0] - 2026-04-22
 
 ### Added
 
-- **Graph mode styling for existing commands** (replaces PR #18 `cymbal depends`): Render visual graphs from `trace`, `impact`, `importers`, and `impls` directly, using Mermaid (TTY default), DOT, or JSON.
+- **Visual graph output for relationship commands.** `trace`, `impact`, `importers`, and `impls` can now render Mermaid (TTY default), DOT, or JSON graphs directly from the existing verbs.
   ```bash
   cymbal trace <symbol> --graph
   cymbal impact <symbol> --graph
@@ -25,9 +25,13 @@ All notable changes to cymbal are documented here.
   - Mermaid output automatically caps at 500 nodes to prevent UI rendering lockups, truncating by degree severity and alerting via stderr. You can use `--graph-limit` to dial this in manually.
   - `impact --graph` defaults to a depth of `1` (rather than `impact`'s normal text default of `2`), significantly improving visual readability on hot functions. You can still explicitly pass `--depth 2` to override.
 
-### Removed
+### Fixed
 
-- PR #18 proposed a standalone `cymbal depends` file graph based on heuristic terminal-token matching. This was rejected in favor of the current `--graph` architecture which requires exact relationship evidence before drawing edges. The intermediate `cymbal graph` standalone verb present in some `0.11.x` dev commits was deleted before release to maintain single-responsibility verbs.
+- **Repo boundaries are now enforced for direct file reads and indexing.** `cymbal show <file>` now resolves symlinks, refuses paths outside the indexed repository, and rejects `.git` reads instead of opening arbitrary local files. The walker also skips symlinked files entirely, so a repo can no longer smuggle external source into the index via `foo.go -> /private/path`.
+- **JIT freshness now catches normal in-place edits again.** The old directory-mtime shortcut could miss ordinary file saves and return stale `search` / `show` / `refs` / `trace` results until some later directory-level change happened. `EnsureFresh` now falls back to the existing file-level incremental path, so ordinary edits, touches, and deletions refresh correctly.
+- **Text search now respects global limits without racing.** The pure-Go fallback had a shared-slice race and only weakly enforced `--limit`; the ripgrep path buffered all stdout in memory. `TextSearch` now cancels promptly once the global limit is reached, and the `rg` fast path streams matches instead of slurping the whole result set first.
+- **Frontmatter, cache files, and settings writes are safer for agent workflows.** Frontmatter metadata now quotes unsafe scalar values instead of interpolating raw newlines/control characters, update-check state no longer persists arbitrary cached update commands, index/update-cache files are created with private permissions, and JSON settings/cache writes now use temp-file + rename semantics.
+- **Long-line and cache-path edge cases are handled correctly.** File-reading paths now raise the scanner buffer so minified/generated single-line files do not fail with `token too long`, and `cymbal ls --repos` now scans the actual cache root (including `CYMBAL_CACHE_DIR`) rather than the stale legacy `~/.cymbal/repos/...` location.
 
 ## [0.11.8] - 2026-04-22
 

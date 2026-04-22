@@ -1,14 +1,20 @@
 package cmd
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/1broseidon/cymbal/index"
 	"github.com/spf13/cobra"
 )
+
+const rgSearchTimeout = 10 * time.Second
 
 var searchCmd = &cobra.Command{
 	Use:   "search <query>",
@@ -129,42 +135,77 @@ func searchTextRg(rgPath, dbPath, query, lang string, limit int, jsonOut bool, i
 		}
 	}
 	fetchLimit := widenPathFilterLimit(limit, len(includes) > 0 || len(excludes) > 0)
-	if fetchLimit > 0 {
-		args = append(args, "--max-count=1", fmt.Sprintf("-m%d", fetchLimit))
-	}
 	args = append(args, "--", query, ".")
 
-	cmd := exec.Command(rgPath, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), rgSearchTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, rgPath, args...)
 	cmd.Dir = repoRoot
-	out, err := cmd.Output()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		// rg exits 1 when no matches; that's not an error.
-		if cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 1 {
-			return fmt.Errorf("no results found for '%s'", query)
-		}
-		// rg unavailable or hard error — fall back.
+		return searchTextGo(dbPath, query, lang, limit, jsonOut, includes, excludes)
+	}
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
 		return searchTextGo(dbPath, query, lang, limit, jsonOut, includes, excludes)
 	}
 
-	var results []index.TextResult
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
+	var (
+		results  []index.TextResult
+		limitHit bool
+	)
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
 		parts := strings.SplitN(line, ":", 3)
 		if len(parts) < 3 {
 			continue
 		}
-		lineNum := 0
-		fmt.Sscanf(parts[1], "%d", &lineNum)
+		lineNum, err := strconv.Atoi(parts[1])
+		if err != nil {
+			continue
+		}
 		relPath := filepath.ToSlash(parts[0])
 		results = append(results, index.TextResult{
 			RelPath: relPath,
 			Line:    lineNum,
 			Snippet: strings.TrimSpace(parts[2]),
 		})
+		if fetchLimit > 0 && len(results) >= fetchLimit {
+			limitHit = true
+			cancel()
+			break
+		}
+	}
+	scanErr := scanner.Err()
+	waitErr := cmd.Wait()
+	if limitHit {
+		scanErr = nil
+		waitErr = nil
 	}
 
+	if ctx.Err() == context.DeadlineExceeded && len(results) == 0 {
+		return searchTextGo(dbPath, query, lang, limit, jsonOut, includes, excludes)
+	}
+	if scanErr != nil {
+		return searchTextGo(dbPath, query, lang, limit, jsonOut, includes, excludes)
+	}
+	if waitErr != nil && !limitHit {
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			if exitErr.ExitCode() == 1 {
+				if len(results) == 0 {
+					return fmt.Errorf("no results found for '%s'", query)
+				}
+			} else {
+				return searchTextGo(dbPath, query, lang, limit, jsonOut, includes, excludes)
+			}
+		} else {
+			return searchTextGo(dbPath, query, lang, limit, jsonOut, includes, excludes)
+		}
+	}
 	results = filterByPath(results, func(r index.TextResult) string { return r.RelPath }, includes, excludes)
 	if limit > 0 && len(results) > limit {
 		results = results[:limit]

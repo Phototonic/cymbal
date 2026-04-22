@@ -1,6 +1,7 @@
 package index
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -255,6 +256,31 @@ func UniqueMarkerXYZ() {
 	}
 	if len(files) != 1 {
 		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+}
+
+func TestFeatureStoreTextSearchRespectsGlobalLimit(t *testing.T) {
+	store, dbPath := newTestStore(t)
+	dir := t.TempDir()
+	now := time.Now()
+
+	for i := 0; i < 3; i++ {
+		filePath := filepath.Join(dir, fmt.Sprintf("file%d.go", i))
+		content := fmt.Sprintf("package main\nfunc Match%d() { println(\"needle\") }\n", i)
+		if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.UpsertFile(filePath, filepath.Base(filePath), "go", fmt.Sprintf("hash%d", i), now, int64(len(content))); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	results, err := TextSearch(dbPath, "needle", "go", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected exactly 2 results, got %d", len(results))
 	}
 }
 

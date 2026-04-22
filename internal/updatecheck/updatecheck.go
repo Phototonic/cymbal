@@ -146,7 +146,6 @@ func GetStatus(ctx context.Context, opts Options) (Status, error) {
 		ReleaseURL:      rel.URL,
 		UpdateAvailable: compareVersions(opts.CurrentVersion, rel.Version) < 0,
 		InstallType:     installType,
-		UpdateCommand:   renderCommand(installType, rel.Version),
 	}
 	if old, loadErr := loadState(); loadErr == nil {
 		state.LastNotifiedAt = old.LastNotifiedAt
@@ -188,7 +187,6 @@ func MarkNotified(status Status) error {
 			LatestVersion: status.LatestVersion,
 			ReleaseURL:    status.ReleaseURL,
 			InstallType:   status.InstallType,
-			UpdateCommand: status.Command,
 		}
 	}
 	state.LastNotifiedAt = nowFn()
@@ -255,11 +253,15 @@ func fetchLatestRelease(ctx context.Context) (releaseInfo, error) {
 }
 
 func statusFromState(state cacheState, currentVersion string, installType InstallType, installCmd string) Status {
+	effectiveInstallType := installType
+	if state.InstallType != InstallUnknown && (effectiveInstallType == InstallUnknown || installCmd == "" || installCmd == releaseURL) {
+		effectiveInstallType = state.InstallType
+	}
 	status := Status{
 		CheckedAt:     state.LastCheckedAt,
 		Available:     compareVersions(currentVersion, state.LatestVersion) < 0,
 		LatestVersion: normalizeVersion(state.LatestVersion),
-		InstallType:   installType,
+		InstallType:   effectiveInstallType,
 		Command:       installCmd,
 		ReleaseURL:    state.ReleaseURL,
 		Source:        "cache",
@@ -267,11 +269,11 @@ func statusFromState(state cacheState, currentVersion string, installType Instal
 	if status.ReleaseURL == "" {
 		status.ReleaseURL = releaseURL
 	}
-	if state.UpdateCommand != "" && os.Getenv("CYMBAL_UPDATE_COMMAND") == "" {
-		status.Command = state.UpdateCommand
-	}
 	if status.Command == "" {
-		status.Command = renderCommand(installType, status.LatestVersion)
+		status.Command = renderCommand(effectiveInstallType, status.LatestVersion)
+	}
+	if status.Command == releaseURL && effectiveInstallType != installType {
+		status.Command = renderCommand(effectiveInstallType, status.LatestVersion)
 	}
 	return status
 }
@@ -314,15 +316,16 @@ func saveState(state cacheState) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	_ = os.Chmod(filepath.Dir(path), 0o700)
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(path, data, 0o644)
+	return atomicWriteFile(path, data, 0o600)
 }
 
 func cachePath() (string, error) {
@@ -526,6 +529,22 @@ func samePath(a, b string) bool {
 		return false
 	}
 	return strings.EqualFold(absA, absB)
+}
+
+func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, mode); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, mode); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Chmod(path, mode)
 }
 
 func isVersionCheckable(v string) bool {

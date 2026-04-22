@@ -105,6 +105,9 @@ func Walk(root string, workers int, langFilter func(string) bool) ([]FileEntry, 
 		if err != nil {
 			return nil // skip errors
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
 		if d.IsDir() {
 			name := d.Name()
 			if skipDirs[name] || strings.HasPrefix(name, ".") && name != "." {
@@ -156,6 +159,9 @@ func buildTreeRecursive(node *TreeNode, dirPath string, depth, maxDepth int) err
 	for _, e := range entries {
 		name := e.Name()
 		if skipDirs[name] || (strings.HasPrefix(name, ".") && name != ".") {
+			continue
+		}
+		if e.Type()&os.ModeSymlink != 0 {
 			continue
 		}
 

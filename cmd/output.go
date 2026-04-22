@@ -28,7 +28,7 @@ func writeJSON(data any) error {
 func frontmatter(meta []kv, content string) {
 	fmt.Println("---")
 	for _, m := range meta {
-		fmt.Printf("%s: %s\n", m.k, m.v)
+		fmt.Printf("%s: %s\n", m.k, formatFrontmatterValue(m.v))
 	}
 	fmt.Println("---")
 	if content != "" {
@@ -43,6 +43,34 @@ func frontmatter(meta []kv, content string) {
 // kv is an ordered key-value pair for frontmatter output.
 type kv struct {
 	k, v string
+}
+
+func formatFrontmatterValue(v string) string {
+	if v == "" {
+		return `""`
+	}
+	if strings.ContainsAny(v, "\r\n\t") ||
+		strings.TrimSpace(v) != v ||
+		strings.HasPrefix(v, "#") ||
+		strings.HasPrefix(v, "-") ||
+		strings.HasPrefix(v, "?") ||
+		strings.HasPrefix(v, ":") ||
+		strings.HasPrefix(v, "{") ||
+		strings.HasPrefix(v, "[") ||
+		strings.HasPrefix(v, "&") ||
+		strings.HasPrefix(v, "*") ||
+		strings.HasPrefix(v, "!") ||
+		strings.HasPrefix(v, "|") ||
+		strings.HasPrefix(v, ">") ||
+		strings.HasPrefix(v, "@") ||
+		strings.HasPrefix(v, "`") ||
+		strings.Contains(v, ": ") ||
+		strings.Contains(v, " #") ||
+		v == "---" ||
+		v == "..." {
+		return strconv.Quote(v)
+	}
+	return v
 }
 
 // parseSymbolArg parses a symbol argument that may include file or parent disambiguation.
