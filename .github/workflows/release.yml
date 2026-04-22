@@ -112,6 +112,12 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check out release sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -135,10 +141,33 @@ jobs:
           sha256sum cymbal_${TAG}_*.tar.gz cymbal_${TAG}_*.zip > checksums.txt
           ls -la
 
+      - name: Extract release notes from changelog
+        run: |
+          TAG=${{ steps.tag.outputs.tag }}
+          VERSION="${TAG#v}"
+          awk -v version="$VERSION" '
+            /^## \[/ {
+              if (in_section) exit
+              if (index($0, "## [" version "]") == 1) {
+                in_section = 1
+                next
+              }
+            }
+            in_section { print }
+          ' CHANGELOG.md > dist/release_notes.md
+
+          sed -i '/./,$!d' dist/release_notes.md
+
+          if ! awk 'NF { found = 1 } END { exit found ? 0 : 1 }' dist/release_notes.md; then
+            echo "Missing CHANGELOG entry for ${TAG}. Add a ## [${VERSION}] section before tagging." >&2
+            exit 1
+          fi
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
+          body_path: dist/release_notes.md
           files: |
             dist/cymbal_*.tar.gz
             dist/cymbal_*.zip
