@@ -12,6 +12,7 @@ import (
 
 func newTestStore(t *testing.T) (*Store, string) {
 	t.Helper()
+	t.Cleanup(CloseAll)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
 	store, err := OpenStore(dbPath)

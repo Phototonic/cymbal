@@ -10,6 +10,8 @@ import (
 )
 
 func TestRepoBoundFilePathRejectsOutsideRepo(t *testing.T) {
+	t.Cleanup(index.CloseAll)
+
 	repoDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repoDir, "main.go"), []byte("package main\nfunc inside() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -32,6 +34,8 @@ func TestRepoBoundFilePathRejectsOutsideRepo(t *testing.T) {
 }
 
 func TestRepoBoundFilePathRejectsSymlinkEscape(t *testing.T) {
+	t.Cleanup(index.CloseAll)
+
 	repoDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repoDir, "main.go"), []byte("package main\nfunc inside() {}\n"), 0o644); err != nil {
 		t.Fatal(err)

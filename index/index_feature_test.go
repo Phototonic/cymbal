@@ -10,6 +10,7 @@ import (
 
 func createTestRepo(t *testing.T) string {
 	t.Helper()
+	t.Cleanup(CloseAll)
 	dir := t.TempDir()
 
 	// Go file
@@ -351,6 +352,8 @@ func TestFeatureIndexRepoDBPathDeterministic(t *testing.T) {
 }
 
 func TestFeatureEnsureFreshDetectsOrdinaryFileEdits(t *testing.T) {
+	t.Cleanup(CloseAll)
+
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "main.go")
 	if err := os.WriteFile(filePath, []byte("package main\nfunc OldName() {}\n"), 0o644); err != nil {
@@ -395,6 +398,8 @@ func TestFeatureEnsureFreshDetectsOrdinaryFileEdits(t *testing.T) {
 }
 
 func TestFeatureListReposUsesCacheDirOverride(t *testing.T) {
+	t.Cleanup(CloseAll)
+
 	cacheDir := t.TempDir()
 	t.Setenv("CYMBAL_CACHE_DIR", cacheDir)
 
