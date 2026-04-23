@@ -4,6 +4,8 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-04-23
+
 ### Added
 
 - **`cymbal search` accepts batched symbols and rg-style path operands** — `cymbal search Foo Bar` now searches each symbol independently instead of joining the words into one query, and `--stdin` works for newline-separated symbol batches. `cymbal search <query> [path ...]` also treats trailing files, directories, and globs as `--path` filters, so scoped text searches like `cymbal search --text 'os\.WriteFile\(' tools/file.go tools/patch.go` work without translating the command shape. `--file` is accepted as an alias for `--path`, and agent hook guidance now distinguishes symbol navigation from literal/regex text search.

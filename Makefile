@@ -1,11 +1,11 @@
 BINARY := cymbal
 CGO_CFLAGS := -DSQLITE_ENABLE_FTS5
 
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.12.0)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.12.1)
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 VERSION_PKG := github.com/1broseidon/cymbal/cmd
-LDFLAGS := -X $(VERSION_PKG).version=v0.12.0 -X $(VERSION_PKG).commit=$(COMMIT) -X $(VERSION_PKG).date=$(DATE)
+LDFLAGS := -X $(VERSION_PKG).version=v0.12.1 -X $(VERSION_PKG).commit=$(COMMIT) -X $(VERSION_PKG).date=$(DATE)
 
 .PHONY: build build-check ci clean install lint test vulncheck
 
