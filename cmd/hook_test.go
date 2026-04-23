@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/1broseidon/cymbal/internal/updatecheck"
 )
 
 // ── detector: positive cases ──
@@ -174,6 +177,62 @@ func TestEmitRemindText(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "cymbal search") {
 		t.Errorf("reminder should mention cymbal search; got %q", buf.String())
+	}
+}
+
+func TestEmitRemindUpdateModeControlsNetwork(t *testing.T) {
+	old := reminderUpdateStatus
+	defer func() { reminderUpdateStatus = old }()
+
+	var calls []updatecheck.Options
+	reminderUpdateStatus = func(ctx context.Context, opts updatecheck.Options) (updatecheck.Status, error) {
+		calls = append(calls, opts)
+		return updatecheck.Status{}, nil
+	}
+
+	var buf bytes.Buffer
+	if err := emitRemindWithUpdate(&buf, "text", "cache"); err != nil {
+		t.Fatal(err)
+	}
+	if err := emitRemindWithUpdate(&buf, "text", "if-stale"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 update checks, got %d", len(calls))
+	}
+	if calls[0].AllowNetwork || calls[0].Timeout != 0 {
+		t.Fatalf("cache mode should be cache-only, got %+v", calls[0])
+	}
+	if !calls[1].AllowNetwork || calls[1].Timeout != remindUpdateTimeout {
+		t.Fatalf("if-stale mode should allow bounded network, got %+v", calls[1])
+	}
+}
+
+func TestEmitRemindUpdateModeHonorsNotifierOptOut(t *testing.T) {
+	old := reminderUpdateStatus
+	defer func() { reminderUpdateStatus = old }()
+	t.Setenv("CYMBAL_NO_UPDATE_NOTIFIER", "1")
+
+	var got updatecheck.Options
+	reminderUpdateStatus = func(ctx context.Context, opts updatecheck.Options) (updatecheck.Status, error) {
+		got = opts
+		return updatecheck.Status{}, nil
+	}
+
+	var buf bytes.Buffer
+	if err := emitRemindWithUpdate(&buf, "text", "if-stale"); err != nil {
+		t.Fatal(err)
+	}
+	if got.AllowNetwork || got.Timeout != 0 {
+		t.Fatalf("notifier opt-out should suppress live checks, got %+v", got)
+	}
+}
+
+func TestEmitRemindRejectsUnknownUpdateMode(t *testing.T) {
+	var buf bytes.Buffer
+	err := emitRemindWithUpdate(&buf, "text", "always")
+	if err == nil || !strings.Contains(err.Error(), "unknown --update") {
+		t.Fatalf("expected unknown update mode error, got %v", err)
 	}
 }
 
@@ -391,6 +450,9 @@ func TestClaudeCodeInstallIsIdempotent(t *testing.T) {
 	if len(sessionStart) != 1 {
 		t.Errorf("expected 1 SessionStart entry; got %d", len(sessionStart))
 	}
+	if !strings.Contains(string(got), "--update=if-stale") {
+		t.Fatalf("expected stale-aware reminder command, got %s", got)
+	}
 
 	// uninstall and confirm only our entries are removed.
 	s, err := loadClaudeSettings(path)
@@ -465,6 +527,9 @@ func TestClaudeCodeInstallMigratesFromUserPromptSubmit(t *testing.T) {
 	}
 
 	got, _ := os.ReadFile(path)
+	if !strings.Contains(string(got), "--update=if-stale") {
+		t.Fatalf("expected migrated SessionStart reminder to use --update=if-stale, got %s", got)
+	}
 	var parsed map[string]any
 	_ = json.Unmarshal(got, &parsed)
 	hooks, _ := parsed["hooks"].(map[string]any)

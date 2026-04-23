@@ -8,7 +8,7 @@ can wire into its native hook point:
 | Command | What it does |
 |---|---|
 | `cymbal hook nudge` | Inspect a would-be shell command; if it looks like a code search, emit a short suggestion for the cymbal equivalent. Never blocks. |
-| `cymbal hook remind` | Print a short reminder block to inject at session start or on demand. |
+| `cymbal hook remind` | Print a short reminder block to inject at session start or on demand. Add `--update=if-stale` when the hook should refresh stale update status with a bounded live check. |
 
 Claude Code has a first-class installer:
 
@@ -62,7 +62,7 @@ What it writes (merged into your existing `~/.claude/settings.json`):
     "SessionStart": [
       {
         "hooks": [
-          {"type": "command", "command": "cymbal hook remind --format=claude-code", "marker": "cymbal-hook", "timeout": 5}
+          {"type": "command", "command": "cymbal hook remind --format=claude-code --update=if-stale", "marker": "cymbal-hook", "timeout": 5}
         ]
       }
     ]
@@ -79,10 +79,11 @@ What it writes (merged into your existing `~/.claude/settings.json`):
   context, without paying ~700 B of re-injected tokens on every user turn.
   (Earlier versions wired this to `UserPromptSubmit`; re-running
   `cymbal hook install claude-code` migrates old installs automatically.)
-- If cymbal's cached update check already knows that a newer release is
-  available, the reminder also includes the exact update command. Agents that
-  can run shell commands should run that command immediately; otherwise they
-  should tell the user exactly what to run.
+- The installer uses `cymbal hook remind --update=if-stale`, so SessionStart
+  refreshes stale or missing update status with a bounded live check before
+  emitting the reminder. If a newer release is available, agents that can run
+  shell commands should run the exact update command immediately; otherwise
+  they should tell the user exactly what to run.
 - Both entries carry `marker: cymbal-hook` so `cymbal hook uninstall
   claude-code` finds and removes them without touching anything else
   you've added.
@@ -195,12 +196,24 @@ cymbal hook remind > .zed/rules.md
 
 Opencode reads `AGENTS.md` as its primary rules file (project root or
 `~/.config/opencode/AGENTS.md` for global scope) and also composes extra
-files via `opencode.json` → `instructions`. Reminder-only integration:
+files via `opencode.json` → `instructions`.
+
+Opencode does not currently provide the same first-class session-start shell
+hook surface as Claude Code. Treat this integration as a best-effort bootstrap:
+it tells the agent to run the fresh-aware reminder command when a shell is
+available, rather than storing a stale reminder snapshot forever.
 
 **Project scope — append to `AGENTS.md`:**
 
 ```bash
-{ echo; echo "# cymbal"; cymbal hook remind; } >> AGENTS.md
+cat >> AGENTS.md <<'EOF'
+
+# cymbal
+At session start, run `cymbal hook remind --update=if-stale` and treat its
+output as persistent navigation guidance. If shell access is unavailable,
+prefer cymbal for symbol navigation and ask the user to run the command when
+update guidance is needed.
+EOF
 ```
 
 Opencode also falls back to `CLAUDE.md` when no `AGENTS.md` is present, so
@@ -214,7 +227,13 @@ This avoids collisions when `AGENTS.md` is shared with other agents
 
 ```bash
 mkdir -p .opencode/instructions
-cymbal hook remind > .opencode/instructions/cymbal.md
+cat > .opencode/instructions/cymbal.md <<'EOF'
+# cymbal
+At session start, run `cymbal hook remind --update=if-stale` and treat its
+output as persistent navigation guidance. If shell access is unavailable,
+prefer cymbal for symbol navigation and ask the user to run the command when
+update guidance is needed.
+EOF
 ```
 
 Then add to `opencode.json` (or the global
@@ -231,9 +250,24 @@ Opencode supports globs and remote URLs in `instructions`, so teams can
 point at a shared source of truth instead of committing the reminder
 into every repo.
 
-If the cached reminder includes a cymbal update command, agents should run it
-when they can execute shell commands in that environment. Otherwise they
-should surface the exact command to the user.
+**Windows global instructions path (PowerShell):**
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.config\opencode\instructions" | Out-Null
+@'
+# cymbal
+At session start, run `cymbal hook remind --update=if-stale` and treat its
+output as persistent navigation guidance. If shell access is unavailable,
+prefer cymbal for symbol navigation and ask the user to run the command when
+update guidance is needed.
+'@ | Set-Content -Encoding UTF8 "$HOME\.config\opencode\instructions\cymbal.md"
+```
+
+The resulting file lives at:
+
+```text
+C:\Users\<user>\.config\opencode\instructions\cymbal.md
+```
 
 ---
 

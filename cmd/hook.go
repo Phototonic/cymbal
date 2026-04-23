@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/1broseidon/cymbal/internal/updatecheck"
 	"github.com/spf13/cobra"
@@ -92,10 +93,16 @@ Formats:
   --format=json         {"systemMessage": "..."} for agents that want JSON
   --format=claude-code  SessionStart shape:
                         {"hookSpecificOutput":{"hookEventName":"SessionStart",
-                        "additionalContext":"..."}}`,
+                        "additionalContext":"..."}}
+
+Update checks:
+  --update=cache        (default) use cached update status only
+  --update=if-stale     refresh update status with a bounded live check only
+                        when the cache is stale or missing`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		format, _ := cmd.Flags().GetString("format")
-		return emitRemind(cmd.OutOrStdout(), format)
+		updateMode, _ := cmd.Flags().GetString("update")
+		return emitRemindWithUpdate(cmd.OutOrStdout(), format, updateMode)
 	},
 }
 
@@ -131,6 +138,7 @@ var hookUninstallCmd = &cobra.Command{
 func init() {
 	hookNudgeCmd.Flags().String("format", "claude-code", "output format: claude-code, text, json")
 	hookRemindCmd.Flags().String("format", "text", "output format: text, json, claude-code")
+	hookRemindCmd.Flags().String("update", "cache", "update check mode: cache, if-stale")
 	hookInstallCmd.Flags().String("scope", "user", "install scope: user (default) or project")
 	hookInstallCmd.Flags().Bool("dry-run", false, "show intended changes without writing")
 	hookUninstallCmd.Flags().String("scope", "user", "uninstall scope: user (default) or project")
@@ -474,12 +482,28 @@ Batch related lookups in one call when possible: ` + "`cymbal search Foo Bar`" +
 
 Use ` + "`cymbal search --text <pattern>`" + ` only for literal text or regex. Prefer cymbal before rg/grep/find/fd unless the user explicitly wants raw text search or raw filesystem traversal.`
 
+const (
+	remindUpdateCache   = "cache"
+	remindUpdateIfStale = "if-stale"
+	remindUpdateTimeout = 800 * time.Millisecond
+)
+
+var reminderUpdateStatus = updatecheck.GetStatus
+
 func emitRemind(w io.Writer, format string) error {
+	return emitRemindWithUpdate(w, format, remindUpdateCache)
+}
+
+func emitRemindWithUpdate(w io.Writer, format, updateMode string) error {
+	allowNetwork, timeout, err := reminderUpdateOptions(updateMode)
+	if err != nil {
+		return err
+	}
 	message := reminderText
-	status, _ := updatecheck.GetStatus(context.Background(), updatecheck.Options{
+	status, _ := reminderUpdateStatus(context.Background(), updatecheck.Options{
 		CurrentVersion: currentVersion(),
-		AllowNetwork:   false,
-		Timeout:        0,
+		AllowNetwork:   allowNetwork,
+		Timeout:        timeout,
 	})
 	message = updatecheck.AugmentReminder(message, status)
 	switch format {
@@ -506,6 +530,20 @@ func emitRemind(w io.Writer, format string) error {
 		return enc.Encode(out)
 	default:
 		return fmt.Errorf("unknown --format %q (want: text, json, claude-code)", format)
+	}
+}
+
+func reminderUpdateOptions(mode string) (bool, time.Duration, error) {
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case "", remindUpdateCache:
+		return false, 0, nil
+	case remindUpdateIfStale:
+		if updatecheck.Disabled() {
+			return false, 0, nil
+		}
+		return true, remindUpdateTimeout, nil
+	default:
+		return false, 0, fmt.Errorf("unknown --update %q (want: cache, if-stale)", mode)
 	}
 }
 
@@ -569,7 +607,7 @@ type claudeSettings struct {
 const (
 	claudeHookMarker = "cymbal-hook"
 	claudeNudgeCmd   = "cymbal hook nudge --format=claude-code"
-	claudeRemindCmd  = "cymbal hook remind --format=claude-code"
+	claudeRemindCmd  = "cymbal hook remind --format=claude-code --update=if-stale"
 )
 
 func claudeSettingsPath(scope string) (string, error) {
