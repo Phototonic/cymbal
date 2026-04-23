@@ -682,12 +682,6 @@ func (e *symbolExtractor) classifyPython(nodeType string, node *sitter.Node) (st
 			return "", nil
 		}
 		nameNode := node.ChildByFieldName("name")
-		if nameNode != nil {
-			name := nameNode.Content(e.src)
-			if len(name) > 0 && name[0] == '_' && name != "__init__" {
-				return "", nil
-			}
-		}
 		return "function", nameNode
 	case "class_definition":
 		// Skip if parent is decorated_definition — the parent already emits this symbol.
@@ -713,12 +707,6 @@ func (e *symbolExtractor) classifyPythonInner(nodeType string, node *sitter.Node
 	switch nodeType {
 	case "function_definition":
 		nameNode := node.ChildByFieldName("name")
-		if nameNode != nil {
-			name := nameNode.Content(e.src)
-			if len(name) > 0 && name[0] == '_' && name != "__init__" {
-				return "", nil
-			}
-		}
 		return "function", nameNode
 	case "class_definition":
 		return "class", node.ChildByFieldName("name")

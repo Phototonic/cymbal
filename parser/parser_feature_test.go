@@ -365,7 +365,7 @@ class Dog(Animal):
 	}
 }
 
-func TestFeaturePythonPrivateSkipped(t *testing.T) {
+func TestFeaturePythonPrivateFunctionsIndexed(t *testing.T) {
 	src := []byte(`def public_func():
     pass
 
@@ -386,13 +386,13 @@ def __very_private():
 	}
 
 	priv := findSymbol(result.Symbols, "_private_func")
-	if priv != nil {
-		t.Error("expected _private_func to be skipped")
+	if priv == nil {
+		t.Error("expected _private_func to be indexed")
 	}
 
 	vpriv := findSymbol(result.Symbols, "__very_private")
-	if vpriv != nil {
-		t.Error("expected __very_private to be skipped")
+	if vpriv == nil {
+		t.Error("expected __very_private to be indexed")
 	}
 }
 
@@ -406,6 +406,10 @@ def cached_func(x):
 @staticmethod
 def static_method():
     pass
+
+@staticmethod
+def _private_static_method():
+    pass
 `)
 	result, err := ParseSource(src, "test.py", "python", lang.Default.TreeSitter("python"))
 	if err != nil {
@@ -418,6 +422,14 @@ def static_method():
 	}
 	if cached.Kind != "function" {
 		t.Errorf("expected kind 'function', got %q", cached.Kind)
+	}
+
+	private := findSymbol(result.Symbols, "_private_static_method")
+	if private == nil {
+		t.Fatal("expected to find _private_static_method (decorated)")
+	}
+	if private.Kind != "function" {
+		t.Errorf("expected kind 'function', got %q", private.Kind)
 	}
 }
 

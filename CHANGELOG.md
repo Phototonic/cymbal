@@ -4,6 +4,10 @@ All notable changes to cymbal are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Python private functions are indexed again** — underscore-prefixed Python functions such as `_parse_token` and `__helper` are no longer silently dropped from the symbol index. This restores `search`, `outline`, `show`, `refs`, `trace`, `impact`, and `investigate` coverage for Python codebases that keep most implementation logic behind module-private helper functions. Fixes [#41](https://github.com/1broseidon/cymbal/issues/41).
+
 ## [0.12.0] - 2026-04-22
 
 ### Added
