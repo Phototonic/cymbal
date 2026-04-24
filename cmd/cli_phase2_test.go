@@ -657,6 +657,7 @@ func TestPhase3CommandOutputFiltersUpdateAndVersion(t *testing.T) {
 
 	cacheDir := t.TempDir()
 	t.Setenv("CYMBAL_CACHE_DIR", cacheDir)
+	t.Setenv("CI", "")
 	updateDir := filepath.Join(cacheDir, "cymbal")
 	if err := os.MkdirAll(updateDir, 0o700); err != nil {
 		t.Fatal(err)
