@@ -10,7 +10,8 @@ coverage:
 
 ignore:
   - "bench/**/*"
+  - "**/bench/**/*"
   - "**/*_test.go"
-  - "main.go"
-  - "lang/registry.go"
-  - "symbols/types.go"
+  - "**/main.go"
+  - "**/lang/registry.go"
+  - "**/symbols/types.go"
