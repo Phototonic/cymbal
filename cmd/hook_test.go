@@ -613,10 +613,13 @@ func TestOpenCodeInstallProjectScopeWritesManagedPlugin(t *testing.T) {
 
 func TestOpenCodeInstallUserScopeWritesManagedPlugin(t *testing.T) {
 	home := t.TempDir()
+	configRoot := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("HOMEDRIVE", "")
 	t.Setenv("HOMEPATH", "")
+	t.Setenv("XDG_CONFIG_HOME", configRoot)
+	t.Setenv("APPDATA", configRoot)
 
 	adapter, err := lookupHookAdapter("opencode")
 	if err != nil {
@@ -627,7 +630,11 @@ func TestOpenCodeInstallUserScopeWritesManagedPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install failed: %v", err)
 	}
-	wantTarget := filepath.Join(home, ".config", "opencode", "plugins", "cymbal-opencode.js")
+	resolvedConfigRoot, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTarget := filepath.Join(resolvedConfigRoot, "opencode", "plugins", "cymbal-opencode.js")
 	if target != wantTarget {
 		t.Fatalf("unexpected user target: got %q want %q", target, wantTarget)
 	}

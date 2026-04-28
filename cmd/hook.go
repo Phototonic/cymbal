@@ -114,7 +114,7 @@ var hookInstallCmd = &cobra.Command{
 
 Supported agents:
 	  claude-code   ~/.claude/settings.json (or --scope project for .claude/settings.json)
-	  opencode      ~/.config/opencode/plugins/cymbal-opencode.js (or --scope project for .opencode/plugins/cymbal-opencode.js)
+	  opencode      <user-config-dir>/opencode/plugins/cymbal-opencode.js (or --scope project for .opencode/plugins/cymbal-opencode.js)
 
 For other agents (Cursor, Windsurf, aider, Cline, Continue, Zed, ...), see
 docs/AGENT_HOOKS.md for copy-paste snippets that wire 'cymbal hook nudge'
@@ -841,11 +841,11 @@ func opencodePluginPath(scope string) (string, error) {
 	if scope == "project" {
 		return filepath.Join(".opencode", "plugins", opencodeManagedPluginFile), nil
 	}
-	home, err := os.UserHomeDir()
+	configRoot, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "opencode", "plugins", opencodeManagedPluginFile), nil
+	return filepath.Join(configRoot, "opencode", "plugins", opencodeManagedPluginFile), nil
 }
 
 func opencodePluginContents() string {
